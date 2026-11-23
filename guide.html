@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>마방진 만드는 법</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* Layout: 상단 공식 띠 → 왼쪽 애니메이션 판 + 오른쪽 방법 설명 (좁으면 한 열) */
+:root {
+  --bg: #f2f4f7;
+  --surface: #ffffff;
+  --ink: #17202b;
+  --muted: #5b6878;
+  --line: #d4dbe4;
+  --accent: #1f6f8b;
+  --mark: #e39a2d;
+  --ok: #2b8a57;
+  --bad: #c2473e;
+  --font-body: "IBM Plex Sans KR", "Malgun Gothic", system-ui, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "Consolas", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141a; --surface: #172029; --ink: #e5ecf3; --muted: #93a2b3;
+    --line: #2a3644; --accent: #5cb3d0; --mark: #f0b24f; --ok: #5cc28c; --bad: #ef7d72;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f141a; --surface: #172029; --ink: #e5ecf3; --muted: #93a2b3;
+  --line: #2a3644; --accent: #5cb3d0; --mark: #f0b24f; --ok: #5cc28c; --bad: #ef7d72;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body);
+  font-size: 15px; line-height: 1.6;
+}
+.wrap {
+  max-width: 1040px; margin: 0 auto;
+  padding-block: 32px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px;
+}
+.eyebrow {
+  margin: 0; font-family: var(--font-num); font-size: 12px; letter-spacing: .14em;
+  color: var(--accent); text-transform: uppercase;
+}
+h1 { margin: 4px 0 6px; font-size: clamp(28px, 5vw, 40px); line-height: 1.2; text-wrap: balance; }
+h2 { margin: 0; font-size: 19px; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 62ch; }
+
+/* 마법의 합 */
+.constant {
+  display: grid; grid-template-columns: auto 1fr; gap: 12px 32px; align-items: center;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px 24px;
+}
+.formula { font-family: var(--font-num); font-size: clamp(22px, 4vw, 30px); font-weight: 600; white-space: nowrap; }
+.formula small { display: block; font-family: var(--font-body); font-size: 13px; font-weight: 400; color: var(--muted); white-space: normal; }
+.ctable { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.ctable div { text-align: center; padding: 6px 4px; font-family: var(--font-num); font-variant-numeric: tabular-nums; border-left: 1px solid var(--line); }
+.ctable div:first-child { border-left: 0; }
+.ctable span { display: block; font-size: 11px; color: var(--muted); }
+.ctable b { font-size: 17px; }
+.ctable .cur { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.ctable .cur b { color: var(--accent); }
+
+/* 크기 탭 */
+.sizes { display: flex; flex-wrap: wrap; gap: 6px; }
+.sizes button {
+  font: 600 15px var(--font-num); padding: 8px 14px; border-radius: 999px; cursor: pointer;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+}
+.sizes button[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.sizes .kind { font: 400 11px var(--font-body); opacity: .75; margin-left: 4px; }
+
+.layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 24px; align-items: start; margin-top: 14px; }
+.stage-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.phase { font-size: 13px; font-weight: 700; color: var(--accent); min-height: 1.6em; }
+
+/* 판 */
+.board-wrap { width: min(100%, 480px); margin: 0 auto; container-type: inline-size; }
+.board {
+  display: grid; gap: 3px;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr)) minmax(0, .85fr);
+}
+.cell {
+  aspect-ratio: 1; display: grid; place-items: center; border-radius: 6px;
+  border: 1.5px solid var(--line); background: var(--surface);
+  font-family: var(--font-num); font-weight: 600; font-variant-numeric: tabular-nums;
+  font-size: calc(100cqw / (var(--n) + 1) * .38); position: relative;
+}
+.cell.z-diag { background: color-mix(in srgb, var(--mark) 13%, var(--surface)); }
+.cell.q1 { background: color-mix(in srgb, var(--accent) 9%, var(--surface)); }
+.cell.q2 { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); }
+.cell.q3 { background: color-mix(in srgb, var(--accent) 27%, var(--surface)); }
+.cell.h-new { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; animation: pop .35s ease-out; }
+.cell.h-mark { border-color: var(--mark); box-shadow: 0 0 0 2px var(--mark) inset; }
+.cell.h-flip { border-color: var(--mark); color: var(--mark); box-shadow: 0 0 0 2px var(--mark) inset; animation: pop .35s ease-out; }
+.cell.h-blocked { border-color: var(--bad); box-shadow: 0 0 0 2px var(--bad) inset; }
+.cell.h-blocked::after {
+  content: "×"; position: absolute; top: 1px; right: 4px; font-size: .55em; color: var(--bad);
+}
+@keyframes pop { from { transform: scale(.72); } to { transform: scale(1); } }
+.sum {
+  display: grid; place-items: center; font-family: var(--font-num); font-variant-numeric: tabular-nums;
+  font-size: calc(100cqw / (var(--n) + 1) * .26); color: var(--muted);
+}
+.sum.ok { color: var(--ok); font-weight: 600; }
+.sum.off { color: var(--bad); font-weight: 600; }
+.diag { display: flex; justify-content: center; gap: 18px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.diag .ok { color: var(--ok); font-weight: 600; }
+.diag .off { color: var(--bad); font-weight: 600; }
+
+.caption {
+  margin: 0; min-height: 3.2em; padding: 10px 14px; border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.caption b { font-family: var(--font-num); color: var(--accent); }
+
+/* 컨트롤 */
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.controls button, .speed button {
+  font: 500 14px var(--font-body); padding: 7px 12px; border-radius: 8px; cursor: pointer;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+}
+.controls button:hover, .speed button:hover { border-color: var(--accent); }
+.controls .play { background: var(--accent); border-color: var(--accent); color: var(--bg); min-width: 92px; font-weight: 700; }
+.speed { display: flex; margin-left: auto; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.speed button { border: 0; border-radius: 0; border-left: 1px solid var(--line); font-size: 13px; }
+.speed button:first-child { border-left: 0; }
+.speed button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); color: var(--accent); font-weight: 700; }
+.scrub { display: flex; gap: 10px; align-items: center; font-family: var(--font-num); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.scrub input { flex: 1; accent-color: var(--accent); min-width: 0; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 방법 설명 */
+.method { display: grid; gap: 14px; min-width: 0; }
+.method .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+.method ol, .method ul { margin: 8px 0 0; padding-left: 1.3em; display: grid; gap: 6px; }
+.method p { margin: 8px 0 0; }
+.method code { font-family: var(--font-num); font-size: .92em; background: color-mix(in srgb, var(--accent) 10%, transparent); padding: 1px 5px; border-radius: 4px; }
+.label { font-size: 12px; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin-top: 8px; font-size: 14px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 12.5px; color: var(--muted); }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; border: 2px solid; }
+
+@media (max-width: 760px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .constant { grid-template-columns: minmax(0, 1fr); }
+  .speed { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cell.h-new, .cell.h-flip { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<main class="wrap">
+  <header>
+    <p class="eyebrow">Magic Square · 3×3 – 8×8</p>
+    <h1>마방진 만드는 법</h1>
+    <p class="lede"><a href="index.html" style="color:var(--accent)">← 마방진 퍼즐 게임으로</a><br>크기를 고르고 재생을 누르면 공식이 한 칸씩 판을 채워 나갑니다. 오른쪽 숫자는 각 가로줄의 합, 아래 숫자는 각 세로줄의 합이며, 마법의 합과 같아지면 초록색이 됩니다.</p>
+  </header>
+
+  <section class="constant" aria-label="마법의 합">
+    <div class="formula">S = n(n² + 1) / 2
+      <small>1부터 n²까지의 합 n²(n²+1)/2를 n개의 줄이 똑같이 나눠 가집니다.</small>
+    </div>
+    <div class="ctable" id="ctable"></div>
+  </section>
+
+  <section>
+    <div class="sizes" role="tablist" id="sizes" aria-label="마방진 크기"></div>
+    <div class="layout">
+      <div class="stage-card">
+        <div class="phase" id="phase"></div>
+        <div class="board-wrap"><div class="board" id="board"></div></div>
+        <div class="diag" id="diag"></div>
+        <p class="caption" id="caption" aria-live="polite"></p>
+        <div class="scrub">
+          <input type="range" id="scrub" min="0" value="0" aria-label="단계 이동">
+          <span id="count"></span>
+        </div>
+        <div class="controls">
+          <button id="first" title="처음으로">⏮</button>
+          <button id="prev" title="이전 단계 (←)">◀ 이전</button>
+          <button id="play" class="play">▶ 재생</button>
+          <button id="next" title="다음 단계 (→)">다음 ▶</button>
+          <button id="last" title="끝으로">⏭</button>
+          <div class="speed" id="speed">
+            <button data-ms="1100">느리게</button>
+            <button data-ms="550" aria-pressed="true">보통</button>
+            <button data-ms="180">빠르게</button>
+          </div>
+        </div>
+        <div class="legend" id="legend"></div>
+      </div>
+      <aside class="method" id="method"></aside>
+    </div>
+  </section>
+</main>
+
+<script>
+const SIZES = [3, 4, 5, 6, 7, 8];
+const S = (n) => n * (n * n + 1) / 2;
+const kindOf = (n) => n % 2 ? 'odd' : n % 4 === 0 ? 'de' : 'se';
+const KIND_LABEL = { odd: '홀수', de: '4의 배수', se: '짝수' };
+
+let n = 7, data, idx = 0, timer = null, speed = 550;
+
+const blank = (n) => Array.from({ length: n }, () => Array(n).fill(0));
+const snap = (g) => g.map((r) => r.slice());
+
+/* ---------- 홀수: 시암 방법 (r0, c0 위치의 m×m 영역에 채움) ---------- */
+function fillOdd(g, m, r0, c0, steps, phase) {
+  let i = 0, j = (m - 1) / 2;
+  g[r0 + i][c0 + j] = 1;
+  steps.push({ g: snap(g), hl: [[r0 + i, c0 + j, 'new']], phase,
+    cap: `<b>1</b> 맨 윗줄 가운데 칸에서 시작합니다.` });
+  for (let v = 2; v <= m * m; v++) {
+    const ti = i - 1, tj = j + 1;
+    const ni = (ti + m) % m, nj = tj % m;
+    const hl = [];
+    let cap;
+    if (g[r0 + ni][c0 + nj]) {
+      hl.push([r0 + ni, c0 + nj, 'blocked']);
+      cap = `<b>${v}</b> 오른쪽 위 칸은 이미 차 있습니다(${g[r0 + ni][c0 + nj]}). 그래서 ${v - 1}의 바로 아래 칸에 놓습니다.`;
+      i = (i + 1) % m;
+    } else {
+      cap = `<b>${v}</b> ${v - 1}의 오른쪽 위 칸에 놓습니다.`;
+      if (ti < 0) cap += ' 판 위로 나가므로 맨 아래 줄로 넘어갑니다.';
+      else if (tj >= m) cap += ' 판 오른쪽으로 나가므로 맨 왼쪽 열로 넘어갑니다.';
+      i = ni; j = nj;
+    }
+    g[r0 + i][c0 + j] = v;
+    hl.push([r0 + i, c0 + j, 'new']);
+    steps.push({ g: snap(g), hl, phase, cap });
+  }
+}
+
+function finish(g, steps) {
+  steps.push({ g: snap(g), hl: [], phase: '완성', zone: true,
+    cap: `완성! 모든 가로줄, 세로줄, 두 대각선의 합이 <b>${S(g.length)}</b>입니다.` });
+}
+
+function buildOdd(n) {
+  const g = blank(n), steps = [];
+  fillOdd(g, n, 0, 0, steps, '시암 방법 · 오른쪽 위로 한 칸씩');
+  finish(g, steps);
+  return { steps, zone: () => '' };
+}
+
+/* ---------- 4의 배수: 대각선 뒤집기 ---------- */
+function buildDE(n) {
+  const g = blank(n), steps = [], N = n * n + 1;
+  const flip = (i, j) => i % 4 === j % 4 || (i % 4) + (j % 4) === 3;
+  for (let i = 0; i < n; i++) {
+    const hl = [];
+    for (let j = 0; j < n; j++) { g[i][j] = i * n + j + 1; hl.push([i, j, 'new']); }
+    steps.push({ g: snap(g), hl, phase: '1단계 · 1부터 차례로 채우기',
+      cap: `<b>${i + 1}행</b> ${i * n + 1}부터 ${i * n + n}까지 왼쪽에서 오른쪽으로 씁니다.` });
+  }
+  const marks = [];
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (flip(i, j)) marks.push([i, j, 'mark']);
+  steps.push({ g: snap(g), hl: marks, phase: '2단계 · 뒤집을 칸 찾기', zone: true,
+    cap: `판을 4×4 블록으로 나누면 블록마다 대각선이 두 개 있습니다. 표시된 <b>${marks.length}</b>칸(전체의 절반)을 뒤집습니다.` });
+  for (let i = 0; i < n; i++) {
+    const hl = [], ch = [];
+    for (let j = 0; j < n; j++) if (flip(i, j)) {
+      const old = g[i][j]; g[i][j] = N - old;
+      hl.push([i, j, 'flip']); ch.push(`${old}→${g[i][j]}`);
+    }
+    steps.push({ g: snap(g), hl, phase: `3단계 · 뒤집기 (v → ${N} − v)`, zone: true,
+      cap: `<b>${i + 1}행</b> ${ch.join(', ')}` });
+  }
+  finish(g, steps);
+  return { steps, zone: (i, j) => flip(i, j) ? 'z-diag' : '' };
+}
+
+/* ---------- 4로 나누면 2가 남는 짝수: 스트레이치 방법 ---------- */
+function buildSE(n) {
+  const m = n / 2, m2 = m * m, k = (n - 2) / 4, g = blank(n), steps = [];
+  fillOdd(g, m, 0, 0, steps, `1단계 · ${m}×${m} 마방진 A 만들기 (시암 방법)`);
+  const quads = [
+    [m, m, m2, '오른쪽 아래'],
+    [0, m, 2 * m2, '오른쪽 위'],
+    [m, 0, 3 * m2, '왼쪽 아래'],
+  ];
+  quads.forEach(([r0, c0, add, name], q) => {
+    const hl = [];
+    for (let i = 0; i < m; i++) for (let j = 0; j < m; j++) {
+      g[r0 + i][c0 + j] = g[i][j] + add; hl.push([r0 + i, c0 + j, 'new']);
+    }
+    let cap = `<b>${name}</b> A의 모든 수에 +${add} → ${add + 1}~${add + m2}`;
+    if (q === 2) cap += '. 이제 세로줄 합은 모두 맞지만 가로줄과 대각선은 아직 다릅니다.';
+    steps.push({ g: snap(g), hl, phase: '2단계 · 나머지 사분면 채우기', cap });
+  });
+  const colsOf = (i) => {
+    const cols = [];
+    for (let c = 0; c < k; c++) cols.push(i === k ? c + 1 : c);
+    for (let c = n - k + 1; c < n; c++) cols.push(c);
+    return cols;
+  };
+  const marks = [];
+  for (let i = 0; i < m; i++) for (const j of colsOf(i)) marks.push([i, j, 'mark'], [i + m, j, 'mark']);
+  steps.push({ g: snap(g), hl: marks, phase: '3단계 · 맞바꿀 칸 찾기',
+    cap: `k = (n − 2) / 4 = <b>${k}</b>. 왼쪽 ${k}개 열의 위·아래 값을 맞바꿉니다. 단, 가운데 행은 한 칸 오른쪽 열을 바꿉니다.` +
+      (k > 1 ? ` 오른쪽 ${k - 1}개 열도 맞바꿉니다.` : ' (n = 6이면 오른쪽에서 바꿀 열은 0개)') });
+  for (let i = 0; i < m; i++) {
+    const hl = [], ch = [];
+    for (const j of colsOf(i)) {
+      [g[i][j], g[i + m][j]] = [g[i + m][j], g[i][j]];
+      hl.push([i, j, 'flip'], [i + m, j, 'flip']); ch.push(`${g[i + m][j]}↔${g[i][j]}`);
+    }
+    steps.push({ g: snap(g), hl, phase: '4단계 · 위·아래 맞바꾸기',
+      cap: `<b>${i + 1}행 ↔ ${i + m + 1}행</b> ${ch.join(', ')}` + (i === k ? ' (가운데 행이라 한 칸 오른쪽 열)' : '') });
+  }
+  finish(g, steps);
+  return { steps, zone: (i, j) => 'q' + ((i < m ? 0 : 2) + (j < m ? 0 : 1)) };
+}
+
+/* ---------- 설명 패널 ---------- */
+function methodHTML(n) {
+  const N = n * n + 1, kind = kindOf(n);
+  const pos = (() => {
+    const g = data.steps[data.steps.length - 1].g;
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (g[i][j] === 1) return `${i + 1}행 ${j + 1}열`;
+  })();
+  const facts = `<dl class="facts">
+      <dt>마법의 합</dt><dd>${n}×(${n * n}+1)/2 = ${S(n)}</dd>
+      <dt>1의 위치</dt><dd>${pos}</dd>
+      <dt>단계 수</dt><dd>${data.steps.length}</dd></dl>`;
+  if (kind === 'odd') return `
+    <div class="card"><div class="label">홀수 · 시암 방법</div><h2>오른쪽 위로 한 칸씩</h2>
+      <ol>
+        <li>1을 맨 윗줄 가운데에 놓습니다.</li>
+        <li>다음 수는 오른쪽 위 대각선 칸에 놓습니다. 판 밖으로 나가면 반대편으로 넘어갑니다.</li>
+        <li>그 칸이 이미 차 있으면 대신 바로 아래 칸에 놓습니다.</li>
+      </ol>${facts}</div>
+    <div class="card"><div class="label">왜 성립하나</div>
+      <p>수는 ${n}개씩 묶음을 이루고, 한 묶음은 감싸는 대각선 하나를 따라 놓입니다. 그래서 어느 가로줄과 세로줄이든 각 묶음에서 수를 하나씩 받고, 묶음 안의 순서도 줄마다 다르게 하나씩 받습니다. 결과적으로 모든 줄의 합이 같아집니다.</p></div>`;
+  if (kind === 'de') return `
+    <div class="card"><div class="label">4의 배수 · 대각선 뒤집기</div><h2>순서대로 쓰고, 절반을 뒤집기</h2>
+      <ol>
+        <li>1부터 ${n * n}까지 왼쪽 위부터 차례로 씁니다: <code>v = i·${n} + j + 1</code></li>
+        <li>4×4 블록마다 두 대각선 위의 칸을 찾습니다. 0부터 센 위치로 <code>i mod 4 = j mod 4</code> 또는 <code>i mod 4 + j mod 4 = 3</code>입니다.</li>
+        <li>그 칸만 <code>${N} − v</code>로 바꿉니다.</li>
+      </ol>${facts}</div>
+    <div class="card"><div class="label">왜 성립하나</div>
+      <p>어느 줄이든 뒤집는 칸이 정확히 절반이고, 판의 중심을 기준으로 대칭으로 놓여 있습니다. 뒤집어서 늘어난 만큼과 줄어든 만큼이 서로 상쇄되어 모든 줄의 합이 ${S(n)}이 됩니다. 처음 왼쪽 위에 있던 1은 ${n * n}으로 바뀌고, 오른쪽 아래의 ${n * n}이 1이 됩니다.</p></div>`;
+  const m = n / 2;
+  return `
+    <div class="card"><div class="label">4로 나누면 2가 남는 짝수 · 스트레이치 방법</div><h2>작은 마방진 4개를 조립하기</h2>
+      <ol>
+        <li>m = ${n}/2 = ${m}. ${m}×${m} 마방진 A를 시암 방법으로 만듭니다.</li>
+        <li>사분면에 배치합니다. 왼쪽 위 A, 오른쪽 아래 A+${m * m}, 오른쪽 위 A+${2 * m * m}, 왼쪽 아래 A+${3 * m * m}.</li>
+        <li>k = (n−2)/4 = ${(n - 2) / 4}. 왼쪽 k개 열의 위·아래 값을 맞바꿉니다(가운데 행은 한 칸 오른쪽 열). 오른쪽 k−1개 열도 맞바꿉니다.</li>
+      </ol>${facts}</div>
+    <div class="card"><div class="label">왜 성립하나</div>
+      <p>사분면을 배치한 직후에는 세로줄 합이 모두 ${S(n)}이지만, 윗줄은 너무 작고 아랫줄은 너무 큽니다. 위·아래 값을 맞바꾸면 세로줄 합은 그대로이고, 윗줄과 아랫줄의 차이만 메워집니다. 가운데 행을 한 칸 밀어서 바꾸는 이유는 대각선까지 맞추기 위해서입니다.</p></div>`;
+}
+
+function legendHTML(kind) {
+  const items = [['var(--accent)', '방금 놓은 칸']];
+  if (kind === 'odd' || kind === 'se') items.push(['var(--bad)', '차 있어서 막힌 칸']);
+  if (kind === 'de') items.push(['var(--mark)', '뒤집는 칸']);
+  if (kind === 'se') items.push(['var(--mark)', '맞바꾸는 칸']);
+  return items.map(([c, t]) => `<span><i style="border-color:${c}"></i>${t}</span>`).join('');
+}
+
+/* ---------- 렌더링 ---------- */
+const $ = (id) => document.getElementById(id);
+
+function render() {
+  const st = data.steps[idx], g = st.g, target = S(n);
+  const hl = new Map(st.hl.map(([i, j, c]) => [i + ',' + j, c]));
+  const board = $('board');
+  board.style.setProperty('--n', n);
+  const sumCell = (vals) => {
+    const full = vals.every(Boolean), s = vals.reduce((a, b) => a + b, 0);
+    const cls = full ? (s === target ? ' ok' : ' off') : '';
+    return `<div class="sum${cls}">${s || ''}</div>`;
+  };
+  let html = '';
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const z = (st.zone || kindOf(n) === 'se') ? data.zone(i, j) : '';
+      const h = hl.get(i + ',' + j);
+      html += `<div class="cell ${z}${h ? ' h-' + h : ''}">${g[i][j] || ''}</div>`;
+    }
+    html += sumCell(g[i]);
+  }
+  for (let j = 0; j < n; j++) html += sumCell(g.map((r) => r[j]));
+  html += '<div></div>';
+  board.innerHTML = html;
+
+  const d1 = g.map((r, i) => r[i]), d2 = g.map((r, i) => r[n - 1 - i]);
+  const dspan = (label, vals) => {
+    const full = vals.every(Boolean), s = vals.reduce((a, b) => a + b, 0);
+    return `<span class="${full ? (s === target ? 'ok' : 'off') : ''}">${label} ${s || '–'}</span>`;
+  };
+  $('diag').innerHTML = dspan('대각선 ↘', d1) + dspan('대각선 ↙', d2);
+  $('phase').textContent = st.phase;
+  $('caption').innerHTML = st.cap;
+  $('scrub').value = idx;
+  $('count').textContent = `${idx + 1} / ${data.steps.length}`;
+}
+
+function setSize(size, atEnd) {
+  stop();
+  n = size;
+  const kind = kindOf(n);
+  data = kind === 'odd' ? buildOdd(n) : kind === 'de' ? buildDE(n) : buildSE(n);
+  idx = atEnd ? data.steps.length - 1 : 0;
+  $('scrub').max = data.steps.length - 1;
+  for (const b of $('sizes').children) b.setAttribute('aria-selected', +b.dataset.n === n);
+  for (const c of $('ctable').children) c.classList.toggle('cur', +c.dataset.n === n);
+  $('method').innerHTML = methodHTML(n);
+  $('legend').innerHTML = legendHTML(kind);
+  render();
+}
+
+function go(i) { idx = Math.max(0, Math.min(data.steps.length - 1, i)); render(); }
+function stop() { clearInterval(timer); timer = null; $('play').textContent = '▶ 재생'; }
+function play() {
+  if (idx >= data.steps.length - 1) go(0);
+  $('play').textContent = '❚❚ 멈춤';
+  clearInterval(timer);
+  timer = setInterval(() => {
+    if (idx >= data.steps.length - 1) return stop();
+    go(idx + 1);
+  }, speed);
+}
+
+/* ---------- 초기화 ---------- */
+$('ctable').innerHTML = SIZES.map((s) => `<div data-n="${s}"><span>${s}×${s}</span><b>${S(s)}</b></div>`).join('');
+$('sizes').innerHTML = SIZES.map((s) =>
+  `<button role="tab" data-n="${s}" id="size-${s}">${s}×${s}<span class="kind">${KIND_LABEL[kindOf(s)]}</span></button>`).join('');
+$('sizes').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (b) setSize(+b.dataset.n, false);
+});
+$('first').onclick = () => { stop(); go(0); };
+$('prev').onclick = () => { stop(); go(idx - 1); };
+$('next').onclick = () => { stop(); go(idx + 1); };
+$('last').onclick = () => { stop(); go(data.steps.length - 1); };
+$('play').onclick = () => (timer ? stop() : play());
+$('scrub').oninput = (e) => { stop(); go(+e.target.value); };
+$('speed').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  speed = +b.dataset.ms;
+  for (const x of $('speed').children) x.setAttribute('aria-pressed', x === b);
+  if (timer) play();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.target.closest('button, input')) return;
+  if (e.key === 'ArrowRight') { stop(); go(idx + 1); }
+  else if (e.key === 'ArrowLeft') { stop(); go(idx - 1); }
+  else if (e.key === ' ') { e.preventDefault(); timer ? stop() : play(); }
+});
+
+setSize(7, true);
+</script>
+</body>
+</html>
