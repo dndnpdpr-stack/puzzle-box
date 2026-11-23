@@ -2,9 +2,14 @@
 
 브라우저에서 바로 하는 마방진(Magic Square) 퍼즐 게임과, 마방진을 만드는 공식을 단계별 애니메이션으로 보여주는 설명 페이지입니다.
 
+## 바로 플레이
+
+- 🎮 게임: https://dndnpdpr-stack.github.io/magic-square/
+- 📖 만드는 법: https://dndnpdpr-stack.github.io/magic-square/guide.html
+
 ## 실행
 
-설치할 것이 없습니다. `index.html`을 브라우저로 열면 됩니다.
+설치할 것이 없습니다. 위 링크로 열거나, 내려받아서 `index.html`을 브라우저로 열면 됩니다.
 
 | 파일 | 내용 |
 |---|---|
