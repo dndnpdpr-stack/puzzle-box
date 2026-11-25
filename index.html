@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>퍼즐 모음</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .cards { display: grid; gap: 12px; }
+  @media (min-width: 640px) { .cards { grid-template-columns: repeat(3, 1fr); } }
+  .card {
+    display: block; padding: 18px 16px; border-radius: 12px; text-decoration: none;
+    background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+  }
+  .card:hover { border-color: var(--accent); }
+  .card .icon { font-size: 26px; line-height: 1; }
+  .card h2 { margin: 10px 0 6px; font-size: 19px; }
+  .card p { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.5; }
+</style>
+</head>
+<body>
+<main>
+  <h1>퍼즐 모음</h1>
+  <p class="sub">골라서 바로 시작하세요.</p>
+  <div class="cards">
+    <a class="card" href="magic-square/">
+      <div class="icon">🔢</div>
+      <h2>마방진</h2>
+      <p>가로·세로·대각선 합이 모두 같도록 숫자를 채우기</p>
+    </a>
+    <a class="card" href="knights-tour/">
+      <div class="icon">♞</div>
+      <h2>기사의 여행</h2>
+      <p>나이트로 모든 칸을 한 번씩 밟기</p>
+    </a>
+    <a class="card" href="star-battle/">
+      <div class="icon">★</div>
+      <h2>별 배치</h2>
+      <p>줄·열·색깔 영역마다 ★ 하나, 서로 붙지 않게</p>
+    </a>
+  </div>
+</main>
+</body>
+</html>
