@@ -51,11 +51,18 @@ test('minority color', () => {
 });
 
 test('continues prefix', () => {
+  // 5×5 모서리에서 (1,2)로 가는 앞부분은 완주할 수 있다
   const res = Knight.solve(5, [[0, 0], [1, 2]]);
-  if (res.status === 'ok') {
-    assertTour(5, res.path);
-    assert.deepEqual(res.path.slice(0, 2), [[0, 0], [1, 2]]);
-  } else assert.equal(res.status, 'none');
+  assert.equal(res.status, 'ok');
+  assertTour(5, res.path);
+  assert.deepEqual(res.path.slice(0, 2), [[0, 0], [1, 2]]);
+});
+
+test('canStart treats timeout as possible', () => {
+  // 탐색 한도 안에 판정이 안 나면 시작을 막지 않는다(가능한 칸을 불가능하다고 안내하지 않도록)
+  assert.equal(Knight.canStart(8, 0, 0, 1), true);
+  // 색 짝맞춤으로 바로 불가능이 판정되는 칸은 한도와 상관없이 막는다
+  assert.equal(Knight.canStart(7, 0, 1, 1), false);
 });
 
 test('budget', () => {

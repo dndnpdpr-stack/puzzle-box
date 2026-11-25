@@ -87,10 +87,17 @@ function reset() {
   render();
 }
 
+// 칸 크기를 화면 폭에 맞춘다
+function sizeBoard() {
+  const board = $('board');
+  board.style.setProperty('--cs', '28px'); // 이전의 큰 판이 화면 폭을 늘려 놓은 채로 재지 않도록 먼저 줄인다
+  const cs = Math.max(28, Math.min(64, Math.floor((Math.min(window.innerWidth, 720) - 32) / n) - 4));
+  board.style.setProperty('--cs', cs + 'px');
+}
+
 function build() {
   const board = $('board');
-  const cs = Math.max(32, Math.min(64, Math.floor((Math.min(window.innerWidth, 720) - 32) / n) - 4));
-  board.style.setProperty('--cs', cs + 'px');
+  sizeBoard();
   board.style.setProperty('--n', n);
   board.innerHTML = '';
   cells = [];
@@ -219,6 +226,7 @@ SIZES.forEach((s) => {
 });
 function refreshSeg() { for (const b of $('sizes').children) b.classList.toggle('on', +b.dataset.v === n); }
 refreshSeg();
+addEventListener('resize', sizeBoard); // 화면을 돌리거나 창 크기를 바꾸면 칸 크기를 다시 맞춘다
 reset();
 </script>
 </body>

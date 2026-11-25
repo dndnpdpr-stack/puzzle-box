@@ -94,8 +94,9 @@
     return timedOut ? { status: 'timeout' } : { status: 'none' };
   }
 
-  function canStart(n, r, c) {
-    return solve(n, [[r, c]]).status === 'ok';
+  // 불가능이 증명된 칸만 막는다. 한도 안에 판정이 안 나면(timeout) 시작을 허용한다.
+  function canStart(n, r, c, budget) {
+    return solve(n, [[r, c]], budget).status !== 'none';
   }
 
   const api = { moves, nextMoves, solve, canStart };
