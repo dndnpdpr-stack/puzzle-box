@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>기사의 여행</title>
+<link rel="stylesheet" href="../common.css">
+<style>
+  .board {
+    display: grid; grid-template-columns: repeat(var(--n), var(--cs)); gap: 3px;
+    justify-content: center; margin: 0 auto; touch-action: manipulation;
+  }
+  .sq {
+    width: var(--cs); height: var(--cs); padding: 0; border-radius: 6px;
+    font-size: calc(var(--cs) * 0.36); font-weight: 600; font-variant-numeric: tabular-nums;
+    border: 2px solid transparent; background: var(--panel); color: var(--ink);
+  }
+  .sq.dark { background: var(--given); }
+  @media (hover: hover) { .board:not(.locked) .sq:not(.cur):not(.hint):hover { background: var(--sel); } }
+  .sq.done { color: var(--muted); }
+  .sq.cur { background: var(--accent); color: #fff; }
+  .sq.can { border-color: var(--accent); }
+  .sq.hint { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 25%, var(--panel)); }
+  .board.locked .sq { cursor: default; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="../">← 퍼즐 목록</a>
+  <h1>기사의 여행</h1>
+  <p class="sub">체스 나이트(L자 이동)로 모든 칸을 정확히 한 번씩 밟으세요. 시작 칸으로 돌아올 필요는 없습니다.</p>
+
+  <div class="controls">
+    <span class="label">크기</span>
+    <div class="seg" id="sizes"></div>
+    <button id="help" class="on" title="다음에 갈 수 있는 칸을 강조합니다">도움 표시</button>
+    <span class="spacer"></span>
+    <button id="undo">되돌리기</button>
+    <button id="restart">다시 시작</button>
+    <button id="hint">힌트</button>
+    <button id="random">무작위 시작</button>
+    <button class="primary" id="new">새 게임</button>
+  </div>
+
+  <div class="status">
+    <span>밟은 칸: <b id="count"></b></span>
+    <span>시간: <b id="time">00:00</b></span>
+    <span>힌트 사용: <b id="hints">0</b></span>
+  </div>
+
+  <div class="board" id="board"></div>
+  <div class="msg" id="msg"></div>
+
+  <div class="help">
+    · 아무 칸이나 눌러 시작하거나 "무작위 시작"을 누르세요. 그 뒤로는 나이트가 갈 수 있는 칸만 누를 수 있습니다.<br>
+    · 5×5와 7×7은 일부 칸에서만 모든 칸을 밟을 수 있습니다.<br>
+    · 힌트는 지금 위치에서 끝까지 갈 수 있는 다음 칸 하나를 초록색으로 알려줍니다.
+  </div>
+</main>
+
+<script src="knight.js"></script>
+<script>
+const SIZES = [5, 6, 7, 8];
+const $ = (id) => document.getElementById(id);
+let n = 6, path = [], showHelp = true, hintCell = null, hintCount = 0, done = false, timer, start, cells;
+
+function tick() {
+  const s = Math.floor((Date.now() - start) / 1000);
+  $('time').textContent = String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+
+function showMsg(text, kind) {
+  const m = $('msg');
+  m.textContent = text;
+  m.className = 'msg' + (text ? ' show ' + kind : '');
+}
+
+function reset() {
+  path = []; hintCell = null; hintCount = 0; done = false;
+  clearInterval(timer);
+  $('time').textContent = '00:00';
+  $('hints').textContent = 0;
+  showMsg('');
+  build();
+  render();
+}
+
+function build() {
+  const board = $('board');
+  const cs = Math.max(32, Math.min(64, Math.floor((Math.min(window.innerWidth, 720) - 32) / n) - 4));
+  board.style.setProperty('--cs', cs + 'px');
+  board.style.setProperty('--n', n);
+  board.innerHTML = '';
+  cells = [];
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++) {
+      const b = document.createElement('button');
+      b.className = 'sq' + ((r + c) % 2 ? ' dark' : '');
+      b.onclick = () => tap(r, c);
+      board.appendChild(b);
+      cells.push(b);
+    }
+}
+
+function render() {
+  const order = new Map(path.map(([r, c], k) => [r * n + c, k + 1]));
+  const can = new Set(done ? [] : Knight.nextMoves(n, path).map(([r, c]) => r * n + c));
+  const last = path.length ? path[path.length - 1] : null;
+  cells.forEach((b, i) => {
+    const k = order.get(i);
+    b.textContent = k || '';
+    b.classList.toggle('done', !!k);
+    b.classList.toggle('cur', !!last && i === last[0] * n + last[1]);
+    b.classList.toggle('can', showHelp && can.has(i));
+    b.classList.toggle('hint', hintCell === i);
+  });
+  $('board').classList.toggle('locked', done);
+  $('count').textContent = `${path.length} / ${n * n}`;
+  for (const id of ['undo', 'hint']) $(id).disabled = done || !path.length;
+  $('random').disabled = path.length > 0;
+}
+
+function begin(r, c) {
+  path = [[r, c]];
+  start = Date.now();
+  clearInterval(timer);
+  timer = setInterval(tick, 1000);
+  tick();
+  showMsg('');
+}
+
+function tap(r, c) {
+  if (done) return;
+  if (!path.length) {
+    if (!Knight.canStart(n, r, c)) {
+      showMsg('이 칸에서는 모든 칸을 밟을 수 없어요. 다른 칸을 골라 보세요.', 'info');
+      return;
+    }
+    begin(r, c);
+  } else {
+    if (!Knight.nextMoves(n, path).some(([a, b]) => a === r && b === c)) return;
+    path.push([r, c]);
+    showMsg('');
+  }
+  hintCell = null;
+  afterMove();
+}
+
+function afterMove() {
+  if (path.length === n * n) {
+    done = true;
+    clearInterval(timer);
+    tick();
+    const h = hintCount ? ` (힌트 ${hintCount}회)` : '';
+    showMsg(`🎉 완주! ${n}×${n} 판을 ${$('time').textContent}만에 돌았습니다${h}.`, 'win');
+  } else if (!Knight.nextMoves(n, path).length) {
+    showMsg('막혔어요. 되돌리기를 눌러 보세요.', 'info');
+  }
+  render();
+}
+
+$('undo').onclick = () => {
+  if (done || !path.length) return;
+  path.pop();
+  hintCell = null;
+  if (!path.length) { clearInterval(timer); $('time').textContent = '00:00'; }
+  showMsg('');
+  render();
+};
+
+$('hint').onclick = () => {
+  if (done || !path.length) return;
+  const res = Knight.solve(n, path);
+  if (res.status === 'ok') {
+    const [r, c] = res.path[path.length];
+    hintCell = r * n + c;
+    hintCount++;
+    $('hints').textContent = hintCount;
+    showMsg('');
+  } else if (res.status === 'none') {
+    showMsg('여기서는 완주할 수 없어요, 되돌려 보세요', 'info');
+  } else {
+    showMsg('여기서 완주 경로를 찾지 못했어요, 되돌려 보세요', 'info');
+  }
+  render();
+};
+
+$('random').onclick = () => {
+  if (path.length) return;
+  const ok = [];
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (Knight.canStart(n, r, c)) ok.push([r, c]);
+  const [r, c] = ok[Math.floor(Math.random() * ok.length)];
+  begin(r, c);
+  afterMove();
+};
+
+$('help').onclick = () => {
+  showHelp = !showHelp;
+  $('help').classList.toggle('on', showHelp);
+  render();
+};
+
+// 다시 시작: 같은 시작 칸에서 처음부터. 시작 전이면 빈 판.
+$('restart').onclick = () => {
+  const first = path[0];
+  reset();
+  if (first) { begin(first[0], first[1]); afterMove(); }
+};
+$('new').onclick = reset;
+
+SIZES.forEach((s) => {
+  const b = document.createElement('button');
+  b.textContent = `${s}×${s}`;
+  b.dataset.v = s;
+  b.onclick = () => { n = s; refreshSeg(); reset(); };
+  $('sizes').appendChild(b);
+});
+function refreshSeg() { for (const b of $('sizes').children) b.classList.toggle('on', +b.dataset.v === n); }
+refreshSeg();
+reset();
+</script>
+</body>
+</html>
