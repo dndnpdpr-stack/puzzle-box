@@ -35,6 +35,8 @@
   .cell.x { color: var(--muted); font-size: calc(var(--cs) * 0.42); }
   .cell.bad { color: var(--bad); }
   .cell.flag { animation: flag 0.5s 3; }
+  .cell.focus { box-shadow: inset 0 0 0 3px var(--ok); }
+  .cell.hinted { color: var(--accent); font-weight: 700; }
   @keyframes flag { 50% { background: var(--bad); color: #fff; } }
   .board.locked .cell { cursor: default; }
 </style>
@@ -69,7 +71,7 @@
     · 한 번 누르면 X(별이 없다는 표시), 두 번 빠르게 누르면 ★을 놓습니다. 다시 누르면 지워집니다.<br>
     · 빈칸에서 끌면 지나가는 칸에 X가 놓이고, X에서 끌면 지나가는 X가 지워집니다.<br>
     · 규칙에 어긋난 ★은 빨간색으로 표시됩니다.<br>
-    · 힌트는 틀린 ★이 있으면 그 칸을 짚어주고, 없으면 정답 ★ 하나를 놓아줍니다.
+    · 힌트는 정답을 보여주지 않고, ★이 올 수 없는 칸을 찾아 X를 놓고 이유를 알려줍니다(초록 칸이 근거). 틀린 ★이나 X가 있으면 먼저 짚어줍니다.
   </div>
 </main>
 
@@ -93,7 +95,7 @@ function showMsg(text, kind) {
 function newGame() {
   ({ regions, solution } = Stars.generate(n));
   marks = Array.from({ length: n }, () => Array(n).fill(0));
-  history = []; hintCount = 0; done = false; lastTap = null; stroke = null;
+  history = []; hintCount = 0; done = false; lastTap = null; stroke = null; hintMarks = null;
   $('hints').textContent = 0;
   showMsg('');
   build();
@@ -177,6 +179,8 @@ function render() {
       b.textContent = v === 2 ? '★' : v === 1 ? '×' : '';
       b.classList.toggle('x', v === 1);
       b.classList.toggle('bad', v === 2 && bad[r][c]);
+      b.classList.toggle('focus', !!hintMarks && hintMarks.focus.has(r * n + c));
+      b.classList.toggle('hinted', !!hintMarks && hintMarks.ex.has(r * n + c));
     }
   $('count').textContent = `${stars} / ${n}`;
   $('board').classList.toggle('locked', done);
@@ -198,6 +202,8 @@ const DOUBLE_MS = 350;
 let lastTap = null;
 function tap(r, c) {
   if (done) return;
+  hintMarks = null;
+  showMsg('');
   const now = Date.now();
   if (lastTap && lastTap.r === r && lastTap.c === c && now - lastTap.t < DOUBLE_MS) {
     lastTap = null;
@@ -237,7 +243,7 @@ document.addEventListener('pointermove', (e) => {
   const cell = cellAt(e.clientX, e.clientY);
   if (!cell || (!stroke.moved && cell[0] === stroke.start[0] && cell[1] === stroke.start[1])) return;
   if (!stroke.mode) return; // ★에서 시작한 끌기는 아무것도 하지 않는다
-  if (!stroke.moved) { stroke.moved = true; strokePaint(stroke.start); }
+  if (!stroke.moved) { stroke.moved = true; hintMarks = null; showMsg(''); strokePaint(stroke.start); }
   strokePaint(cell);
   render();
 });
@@ -268,6 +274,7 @@ function win() {
 
 $('undo').onclick = () => {
   lastTap = null;
+  hintMarks = null;
   if (done || !history.length) return;
   for (const [r, c, v] of history.pop()) marks[r][c] = v;
   showMsg('');
@@ -276,6 +283,7 @@ $('undo').onclick = () => {
 
 $('clear').onclick = () => {
   lastTap = null;
+  hintMarks = null;
   if (done) return;
   const changes = [];
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (marks[r][c]) changes.push([r, c, 0]);
@@ -283,27 +291,45 @@ $('clear').onclick = () => {
   showMsg('');
 };
 
+// 힌트: 정답 ★을 놓지 않고, 논리로 제외할 수 있는 칸에 X를 놓고 이유를 알려준다(Stars.hint)
+const lineName = (u) => (u.type === 'row' ? `${u.index + 1}번째 가로줄` : u.type === 'col' ? `${u.index + 1}번째 세로줄` : '이 색깔 영역');
+const lineList = (t) => t.indices.map((i) => i + 1).sort((x, y) => x - y).join('·') + (t.type === 'row' ? '번째 가로줄' : '번째 세로줄');
+function hintText(h) {
+  switch (h.rule) {
+    case 'wrong-star': return '이 ★은 정답 자리가 아니에요.';
+    case 'wrong-x': return '이 X는 잘못 놓였어요. 지우고 다시 생각해 보세요.';
+    case 'around-star': return '★과 같은 줄·열·영역이거나 붙어 있는 칸에는 ★이 올 수 없어요. 그 칸들에 X를 놓았어요.';
+    case 'single': return `${lineName(h.unit)}에 ★을 놓을 수 있는 칸이 초록 칸 하나뿐이에요. 그 칸과 겹치거나 붙은 칸에 X를 놓았어요.`;
+    case 'place': return `${lineName(h.unit)}에 ★을 놓을 수 있는 칸이 초록 칸 하나뿐이에요. 거기에 ★을 놓아 보세요.`;
+    case 'confined':
+      return h.unit.type === 'region'
+        ? `초록 영역의 ★은 ${lineName(h.target)} 안에만 올 수 있어요. 그래서 그 줄의 다른 칸에 X를 놓았어요.`
+        : `${lineName(h.unit)}의 ★은 초록 칸이 있는 영역 안에만 올 수 있어요. 그래서 그 영역의 다른 칸에 X를 놓았어요.`;
+    case 'attack': return `X를 놓은 칸에 ★을 놓으면 ${lineName(h.unit)}(초록 칸)에 ★을 놓을 곳이 없어져요.`;
+    case 'pigeonhole':
+      return h.target.type === 'region'
+        ? `${h.units.map(lineName).join(', ')}의 ★은 모두 영역 ${h.units.length}개(초록 칸이 있는 영역) 안에 와야 해요. 그래서 그 영역들의 다른 칸에 X를 놓았어요.`
+        : `영역 ${h.units.length}개(초록 칸)의 ★이 모두 ${lineList(h.target)} 안에 와야 해요. 그래서 그 줄들의 다른 칸에 X를 놓았어요.`;
+    default: return '계산해 보면 이 칸에는 ★이 올 수 없어요. X를 놓았어요.';
+  }
+}
+let hintMarks = null; // { focus: Set, ex: Set } 다음 조작 전까지 강조
 $('hint').onclick = () => {
   lastTap = null;
   if (done) return;
-  const wrong = [], missing = [];
-  for (let r = 0; r < n; r++) {
-    for (let c = 0; c < n; c++) if (marks[r][c] === 2 && solution[r] !== c) wrong.push([r, c]);
-    if (marks[r][solution[r]] !== 2) missing.push(r);
-  }
+  const h = Stars.hint(regions, marks, solution);
   hintCount++;
   $('hints').textContent = hintCount;
-  if (wrong.length) {
-    const [r, c] = wrong[Math.floor(Math.random() * wrong.length)];
-    const b = cells[r][c];
+  const key = ([r, c]) => r * n + c;
+  if (h.rule === 'wrong-star' || h.rule === 'wrong-x') {
+    const [r, c] = h.focus[0], b = cells[r][c];
     b.classList.remove('flag'); void b.offsetWidth; b.classList.add('flag');
     setTimeout(() => b.classList.remove('flag'), 1500);
-    showMsg('이 별은 정답 자리가 아니에요', 'info');
-  } else if (missing.length) {
-    const r = missing[Math.floor(Math.random() * missing.length)];
-    showMsg('');
-    apply([[r, solution[r], 2]]);
   }
+  if (h.exclude.length) apply(h.exclude.map(([r, c]) => [r, c, 1]));
+  hintMarks = { focus: new Set(h.focus.map(key)), ex: new Set(h.exclude.map(key)) };
+  render();
+  showMsg(hintText(h), 'info');
 };
 
 $('giveup').onclick = () => {

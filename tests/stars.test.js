@@ -87,3 +87,74 @@ test('isSolved', () => {
   m[0][solution[0]] = 0;
   assert.ok(!Stars.isSolved(regions, m), '별 하나 빠짐');
 });
+
+// ---- 힌트: 정답을 보여주지 않고 제외할 칸(과 이유)을 알려준다 ----
+const emptyMarks = (n) => Array.from({ length: n }, () => Array(n).fill(0));
+const conflict = (regions, [a, b], [c, d]) =>
+  a === c || b === d || regions[a][b] === regions[c][d] || (Math.abs(a - c) <= 1 && Math.abs(b - d) <= 1);
+
+test('hint points at a wrong star first', () => {
+  const { regions, solution } = Stars.generate(6);
+  const m = emptyMarks(6);
+  const wrongCol = (solution[2] + 3) % 6;
+  m[2][wrongCol] = 2;
+  const h = Stars.hint(regions, m, solution);
+  assert.equal(h.rule, 'wrong-star');
+  assert.deepEqual(h.focus, [[2, wrongCol]]);
+  assert.deepEqual(h.exclude, []);
+});
+
+test('hint points at an X on a star cell', () => {
+  const { regions, solution } = Stars.generate(6);
+  const m = emptyMarks(6);
+  m[4][solution[4]] = 1;
+  const h = Stars.hint(regions, m, solution);
+  assert.equal(h.rule, 'wrong-x');
+  assert.deepEqual(h.focus, [[4, solution[4]]]);
+});
+
+test('hint excludes cells around a placed star', () => {
+  const { regions, solution } = Stars.generate(7);
+  const m = emptyMarks(7);
+  const s = [3, solution[3]];
+  m[3][solution[3]] = 2;
+  const h = Stars.hint(regions, m, solution);
+  assert.equal(h.rule, 'around-star');
+  const want = [];
+  for (let r = 0; r < 7; r++)
+    for (let c = 0; c < 7; c++) if ((r !== s[0] || c !== s[1]) && conflict(regions, s, [r, c])) want.push([r, c]);
+  assert.deepEqual(h.exclude, want);
+});
+
+test('hint never excludes a star cell, and hints alone solve every puzzle', () => {
+  const used = {};
+  for (let n = 5; n <= 9; n++)
+    for (let k = 0; k < 40; k++) {
+      const { regions, solution } = Stars.generate(n);
+      const m = emptyMarks(n);
+      let steps = 0;
+      while (!Stars.isSolved(regions, m)) {
+        assert.ok(++steps <= n * n + n, `n=${n} 힌트가 끝나지 않음`);
+        const h = Stars.hint(regions, m, solution);
+        used[h.rule] = (used[h.rule] || 0) + 1;
+        assert.ok(!['wrong-star', 'wrong-x'].includes(h.rule), `틀린 표시가 없는데 ${h.rule}`);
+        if (h.rule === 'place') {
+          const [r, c] = h.focus[0];
+          assert.equal(solution[r], c, 'place가 정답 칸이 아님');
+          m[r][c] = 2;
+          continue;
+        }
+        assert.ok(h.exclude.length > 0, `${h.rule}: 제외할 칸 없음`);
+        for (const [r, c] of h.exclude) {
+          assert.notEqual(solution[r], c, `${h.rule}가 정답 칸 (${r},${c})을 제외함`);
+          assert.equal(m[r][c], 0, `${h.rule}가 이미 표시된 칸을 제외함`);
+          m[r][c] = 1;
+        }
+        // X로 후보가 하나만 남은 줄·열·영역은 별을 놓아야 진행되므로, place 힌트가 그 역할을 한다
+      }
+    }
+  console.log('  힌트 규칙 사용 횟수:', JSON.stringify(used));
+  // 정답에 기대는 마지막 수단은 드물어야 한다
+  const total = Object.values(used).reduce((a, b) => a + b);
+  assert.ok((used.solution || 0) / total < 0.1, `solution 규칙 비율 ${(used.solution || 0)}/${total}`);
+});

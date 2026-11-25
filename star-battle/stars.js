@@ -137,6 +137,116 @@
     return conflicts(regions, marks).every((row) => row.every((v) => !v));
   }
 
-  const api = { generate, solve, conflicts, isSolved };
+  // 힌트: 정답 별을 바로 보여주지 않고, 지금 상태에서 논리로 제외할 수 있는 칸과 그 이유를 찾는다.
+  // 결과: { rule, exclude: [[r,c]...] (X를 놓을 칸), focus: [[r,c]...] (근거로 강조할 칸), unit?, units?, target? }
+  // rule 순서(쉬운 것부터): wrong-star, wrong-x, around-star, single, place, confined, attack, pigeonhole, solution
+  function hint(regions, marks, solution) {
+    const n = regions.length;
+    const cellsWhere = (f) => {
+      const out = [];
+      for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (f(r, c)) out.push([r, c]);
+      return out;
+    };
+    const clash = ([a, b], [c, d]) =>
+      a === c || b === d || regions[a][b] === regions[c][d] || (Math.abs(a - c) <= 1 && Math.abs(b - d) <= 1);
+    const same = ([a, b], [c, d]) => a === c && b === d;
+
+    // 1. 틀린 표시
+    const wrongStar = cellsWhere((r, c) => marks[r][c] === 2 && solution[r] !== c);
+    if (wrongStar.length) return { rule: 'wrong-star', exclude: [], focus: [wrongStar[0]] };
+    const wrongX = cellsWhere((r, c) => marks[r][c] === 1 && solution[r] === c);
+    if (wrongX.length) return { rule: 'wrong-x', exclude: [], focus: [wrongX[0]] };
+
+    // 2. 놓인 ★ 주변
+    const stars = cellsWhere((r, c) => marks[r][c] === 2);
+    const around = cellsWhere((r, c) => marks[r][c] === 0 && stars.some((s) => clash(s, [r, c])));
+    if (around.length) {
+      const focus = stars.filter((s) => around.some((p) => clash(s, p)));
+      return { rule: 'around-star', exclude: around, focus };
+    }
+
+    // 이제 빈칸은 모두 후보(★이 없는 줄·열·영역에 있고 어떤 ★과도 겹치지 않음)
+    const cand = cellsWhere((r, c) => marks[r][c] === 0);
+    const units = [];
+    for (let i = 0; i < n; i++) {
+      units.push({ type: 'row', index: i, has: ([r]) => r === i });
+      units.push({ type: 'col', index: i, has: ([, c]) => c === i });
+      units.push({ type: 'region', index: i, has: ([r, c]) => regions[r][c] === i });
+    }
+    const open = units
+      .filter((u) => !stars.some(u.has))
+      .map((u) => ({ type: u.type, index: u.index, has: u.has, cells: cand.filter(u.has) }));
+    const pub = (u) => ({ type: u.type, index: u.index });
+
+    // 3. 후보가 하나뿐인 줄·열·영역: 그 칸과 겹치는 후보는 제외. 제외할 것이 없으면 ★을 놓으라고 알려준다
+    const singles = open.filter((u) => u.cells.length === 1);
+    for (const u of singles) {
+      const p = u.cells[0];
+      const ex = cand.filter((q) => !same(p, q) && clash(p, q));
+      if (ex.length) return { rule: 'single', unit: pub(u), exclude: ex, focus: [p] };
+    }
+    if (singles.length) return { rule: 'place', unit: pub(singles[0]), exclude: [], focus: [singles[0].cells[0]] };
+
+    // 4. 갇힘: 영역의 후보가 한 줄(열)에만 있으면 그 줄의 다른 후보 제외. 줄(열)의 후보가 한 영역에만 있으면 그 영역의 다른 후보 제외
+    for (const u of open) {
+      if (u.type === 'region') {
+        for (const [axis, type] of [[0, 'row'], [1, 'col']]) {
+          const lines = new Set(u.cells.map((p) => p[axis]));
+          if (lines.size !== 1) continue;
+          const line = [...lines][0];
+          const ex = cand.filter((q) => q[axis] === line && regions[q[0]][q[1]] !== u.index);
+          if (ex.length) return { rule: 'confined', unit: pub(u), target: { type, index: line }, exclude: ex, focus: u.cells };
+        }
+      } else {
+        const regs = new Set(u.cells.map(([r, c]) => regions[r][c]));
+        if (regs.size !== 1) continue;
+        const g = [...regs][0];
+        const ex = cand.filter((q) => regions[q[0]][q[1]] === g && !u.has(q));
+        if (ex.length) return { rule: 'confined', unit: pub(u), target: { type: 'region', index: g }, exclude: ex, focus: u.cells };
+      }
+    }
+
+    // 5. 막는 칸: 여기에 ★을 놓으면 다른 줄·열·영역의 후보가 모두 사라진다
+    for (const u of open) {
+      const killers = cand.filter((p) => !u.has(p) && u.cells.every((q) => clash(p, q)));
+      if (killers.length) return { rule: 'attack', unit: pub(u), exclude: killers, focus: u.cells };
+    }
+
+    // 6. 비둘기집: 영역 k개의 후보가 줄(열) k개 안에 갇히면 그 줄들의 다른 후보 제외. 반대로 줄 k개가 영역 k개 안에 갇혀도 같다
+    const openRegions = open.filter((u) => u.type === 'region');
+    for (const [axis, type] of [[0, 'row'], [1, 'col']]) {
+      const lines = open.filter((u) => u.type === type);
+      // 줄 묶음 → 그 안에 갇힌 영역들
+      for (let mask = 1; mask < 1 << lines.length; mask++) {
+        const set = lines.filter((_, i) => mask & (1 << i));
+        if (set.length < 2 || set.length >= lines.length) continue;
+        const idx = new Set(set.map((u) => u.index));
+        const inside = openRegions.filter((g) => g.cells.every((p) => idx.has(p[axis])));
+        if (inside.length !== set.length) continue;
+        const gs = new Set(inside.map((g) => g.index));
+        const ex = cand.filter((q) => idx.has(q[axis]) && !gs.has(regions[q[0]][q[1]]));
+        if (ex.length) return { rule: 'pigeonhole', units: inside.map(pub), target: { type, indices: [...idx] }, exclude: ex, focus: inside.flatMap((g) => g.cells) };
+      }
+      // 영역 묶음 → 그 안에 갇힌 줄들
+      for (let mask = 1; mask < 1 << openRegions.length; mask++) {
+        const set = openRegions.filter((_, i) => mask & (1 << i));
+        if (set.length < 2 || set.length >= openRegions.length) continue;
+        const gs = new Set(set.map((g) => g.index));
+        const inside = lines.filter((u) => u.cells.every(([r, c]) => gs.has(regions[r][c])));
+        if (inside.length !== set.length) continue;
+        const idx = new Set(inside.map((u) => u.index));
+        const ex = cand.filter((q) => gs.has(regions[q[0]][q[1]]) && !idx.has(q[axis]));
+        if (ex.length) return { rule: 'pigeonhole', units: inside.map(pub), target: { type: 'region', indices: [...gs] }, exclude: ex, focus: inside.flatMap((u) => u.cells) };
+      }
+    }
+
+    // 7. 마지막 수단: 정답에 없는 후보 하나
+    const off = cand.filter(([r, c]) => solution[r] !== c);
+    if (off.length) return { rule: 'solution', exclude: [off[0]], focus: [] };
+    const on = cand[0];
+    return { rule: 'place', exclude: [], focus: on ? [on] : [] };
+  }
+
+  const api = { generate, solve, conflicts, isSolved, hint };
   if (typeof module !== 'undefined') module.exports = api; else root.Stars = api;
 })(this);
