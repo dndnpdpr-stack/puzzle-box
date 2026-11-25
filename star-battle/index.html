@@ -7,16 +7,17 @@
 <link rel="stylesheet" href="../common.css">
 <style>
   :root {
-    --r0: hsl(0 75% 88%);   --r1: hsl(32 85% 85%);  --r2: hsl(54 80% 80%);
-    --r3: hsl(100 50% 82%); --r4: hsl(165 45% 80%); --r5: hsl(195 65% 84%);
-    --r6: hsl(228 70% 88%); --r7: hsl(268 55% 88%); --r8: hsl(318 55% 88%);
+    /* 영역 색 9개: 색상환을 40°씩 나눈 파스텔(번호 순서 = 색상 순서). 이웃 번호끼리 밝기도 번갈아 달리 해 구분을 돕는다 */
+    --c0: hsl(0 80% 84%);   --c1: hsl(40 90% 74%);  --c2: hsl(80 60% 84%);
+    --c3: hsl(120 45% 72%); --c4: hsl(160 55% 84%); --c5: hsl(200 75% 74%);
+    --c6: hsl(240 80% 88%); --c7: hsl(280 55% 76%); --c8: hsl(320 75% 88%);
     --wall: #4b4f58;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --r0: hsl(0 35% 30%);   --r1: hsl(30 40% 28%);  --r2: hsl(54 35% 26%);
-      --r3: hsl(100 25% 26%); --r4: hsl(165 30% 24%); --r5: hsl(195 40% 27%);
-      --r6: hsl(228 35% 32%); --r7: hsl(268 30% 32%); --r8: hsl(318 30% 30%);
+      --c0: hsl(0 45% 32%);   --c1: hsl(40 50% 24%);  --c2: hsl(80 35% 30%);
+      --c3: hsl(120 30% 22%); --c4: hsl(160 40% 29%); --c5: hsl(200 50% 24%);
+      --c6: hsl(240 40% 38%); --c7: hsl(280 32% 27%); --c8: hsl(320 40% 34%);
       --wall: #c9ced6;
     }
   }
@@ -111,8 +112,36 @@ function sizeBoard() {
   board.style.setProperty('--cs', cs + 'px');
 }
 
+// 서로 붙은 영역에는 색상환에서 멀리 떨어진 색을 준다(경계선 없이 색만으로 구분되도록).
+// 붙은 영역 쌍의 색 거리(색상환 단계, 최대 4)의 최솟값이 가장 크게 되는 배정을 백트래킹으로 찾는다. 색 시도 순서는 무작위.
+const COLORS = 9;
+let regionColor = [];
+function assignColors() {
+  const nb = Array.from({ length: n }, () => new Set());
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++)
+      for (const [a, b] of [[r + 1, c], [r, c + 1]])
+        if (a < n && b < n && regions[a][b] !== regions[r][c]) { nb[regions[r][c]].add(regions[a][b]); nb[regions[a][b]].add(regions[r][c]); }
+  const dist = (i, j) => { const d = Math.abs(i - j); return Math.min(d, COLORS - d); };
+  const order = [...Array(COLORS).keys()].sort(() => Math.random() - 0.5);
+  const col = Array(n).fill(-1), used = Array(COLORS).fill(false);
+  function fill(i, gap) {
+    if (i === n) return true;
+    for (const k of order) {
+      if (used[k] || [...nb[i]].some((j) => col[j] >= 0 && dist(k, col[j]) < gap)) continue;
+      used[k] = true; col[i] = k;
+      if (fill(i + 1, gap)) return true;
+      used[k] = false; col[i] = -1;
+    }
+    return false;
+  }
+  for (let gap = 4; gap >= 1; gap--) if (fill(0, gap)) break;
+  regionColor = col;
+}
+
 function build() {
   const board = $('board');
+  assignColors();
   sizeBoard();
   board.style.setProperty('--n', n);
   board.innerHTML = '';
@@ -123,10 +152,10 @@ function build() {
     for (let c = 0; c < n; c++) {
       const b = document.createElement('button');
       b.className = 'cell';
-      b.style.background = `var(--r${regions[r][c]})`;
-      // 칸마다 위·왼쪽 선만 그린다(영역이 바뀌면 굵게). 바깥 테두리는 아래·오른쪽도.
-      b.style.borderTop = r === 0 || regions[r - 1][c] !== regions[r][c] ? wall : thin;
-      b.style.borderLeft = c === 0 || regions[r][c - 1] !== regions[r][c] ? wall : thin;
+      b.style.background = `var(--c${regionColor[regions[r][c]]})`;
+      // 영역은 색으로만 구분한다. 칸 사이는 옅은 선, 판 바깥 테두리만 굵게.
+      b.style.borderTop = r === 0 ? wall : thin;
+      b.style.borderLeft = c === 0 ? wall : thin;
       if (r === n - 1) b.style.borderBottom = wall;
       if (c === n - 1) b.style.borderRight = wall;
       b.dataset.r = r; b.dataset.c = c;
