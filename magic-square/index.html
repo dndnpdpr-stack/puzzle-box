@@ -4,47 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>마방진 퍼즐</title>
+<link rel="stylesheet" href="../common.css">
 <style>
-  :root {
-    --bg: #f6f4ef; --panel: #ffffff; --ink: #1f2328; --muted: #6b7280;
-    --line: #d8d4ca; --given: #ece8de; --accent: #3b5bdb; --ok: #2f9e44;
-    --bad: #e03131; --sel: #dbe4ff;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #16181d; --panel: #1f2229; --ink: #e9ecef; --muted: #9aa1ab;
-      --line: #343a46; --given: #2a2e37; --accent: #748ffc; --ok: #51cf66;
-      --bad: #ff6b6b; --sel: #2b3558;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font-family: system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
-    display: flex; justify-content: center; padding: 24px 16px;
-  }
-  main { width: 100%; max-width: 720px; }
-  h1 { margin: 0 0 4px; font-size: 28px; }
-  .sub { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
-  .controls {
-    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-    padding: 12px; margin-bottom: 16px;
-  }
-  .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-  .seg button { border: 0; border-radius: 0; border-right: 1px solid var(--line); }
-  .seg button:last-child { border-right: 0; }
-  button {
-    font: inherit; font-size: 14px; padding: 7px 12px; cursor: pointer;
-    background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
-  }
-  button:hover { background: var(--given); }
-  button.on { background: var(--accent); color: #fff; }
-  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .label { font-size: 13px; color: var(--muted); }
-  .spacer { flex: 1; }
-  .status { display: flex; gap: 18px; font-size: 14px; margin-bottom: 12px; flex-wrap: wrap; }
-  .status b { font-variant-numeric: tabular-nums; }
   .board-wrap { overflow-x: auto; }
   table.board { border-collapse: separate; border-spacing: 4px; margin: 0 auto; }
   .board td { padding: 0; text-align: center; }
@@ -74,18 +35,11 @@
     border: 1px solid var(--line); border-radius: 6px; font-variant-numeric: tabular-nums;
   }
   .num.used { opacity: .25; text-decoration: line-through; }
-  .msg {
-    margin-top: 16px; padding: 14px; border-radius: 10px; text-align: center;
-    font-weight: 600; display: none;
-  }
-  .msg.show { display: block; }
-  .msg.win { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
-  .msg.info { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
-  .help { margin-top: 20px; font-size: 13px; color: var(--muted); line-height: 1.6; }
 </style>
 </head>
 <body>
 <main>
+  <a class="back" href="../">← 퍼즐 목록</a>
   <h1>마방진 퍼즐</h1>
   <p class="sub">가로·세로·대각선의 합이 모두 같아지도록 1부터 n²까지의 숫자를 한 번씩 채우세요. <a href="guide.html" style="color:var(--accent)">만드는 법 보기 →</a></p>
 
