@@ -29,6 +29,7 @@ h1 { margin: 0 0 4px; font-size: 28px; }
 .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .seg button { border: 0; border-radius: 0; border-right: 1px solid var(--line); }
 .seg button:last-child { border-right: 0; }
+@media (max-width: 360px) { .seg button { padding: 7px 8px; } } /* 좁은 휴대폰에서 크기 버튼 6개가 한 줄에 들어가게 */
 button {
   font: inherit; font-size: 14px; padding: 7px 12px; cursor: pointer;
   background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
