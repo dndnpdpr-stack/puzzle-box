@@ -4,8 +4,8 @@
 
 ## 바로 플레이
 
-- 🎮 게임: https://dndnpdpr-stack.github.io/magic-square/
-- 📖 만드는 법: https://dndnpdpr-stack.github.io/magic-square/guide.html
+- 🎮 게임: https://dndnpdpr-stack.github.io/puzzle-box/
+- 📖 만드는 법: https://dndnpdpr-stack.github.io/puzzle-box/guide.html
 
 ## 실행
 
