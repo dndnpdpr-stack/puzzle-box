@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>별 배치</title>
+<link rel="stylesheet" href="../common.css">
+<style>
+  :root {
+    --r0: hsl(0 75% 88%);   --r1: hsl(32 85% 85%);  --r2: hsl(54 80% 80%);
+    --r3: hsl(100 50% 82%); --r4: hsl(165 45% 80%); --r5: hsl(195 65% 84%);
+    --r6: hsl(228 70% 88%); --r7: hsl(268 55% 88%); --r8: hsl(318 55% 88%);
+    --wall: #4b4f58;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --r0: hsl(0 35% 30%);   --r1: hsl(30 40% 28%);  --r2: hsl(54 35% 26%);
+      --r3: hsl(100 25% 26%); --r4: hsl(165 30% 24%); --r5: hsl(195 40% 27%);
+      --r6: hsl(228 35% 32%); --r7: hsl(268 30% 32%); --r8: hsl(318 30% 30%);
+      --wall: #c9ced6;
+    }
+  }
+  .board {
+    display: grid; grid-template-columns: repeat(var(--n), var(--cs));
+    justify-content: center; margin: 0 auto; touch-action: manipulation;
+  }
+  .cell {
+    width: var(--cs); height: var(--cs); padding: 0; border-radius: 0;
+    border: 0;
+    font-size: calc(var(--cs) * 0.55); line-height: 1; color: var(--ink);
+    -webkit-tap-highlight-color: transparent; user-select: none;
+  }
+  @media (hover: hover) { .board:not(.locked) .cell:hover { filter: brightness(0.94); } }
+  .cell.x { color: var(--muted); font-size: calc(var(--cs) * 0.42); }
+  .cell.bad { color: var(--bad); }
+  .cell.flag { animation: flag 0.5s 3; }
+  @keyframes flag { 50% { background: var(--bad); color: #fff; } }
+  .board.locked .cell { cursor: default; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="../">← 퍼즐 목록</a>
+  <h1>별 배치</h1>
+  <p class="sub">가로줄, 세로줄, 색깔 영역마다 ★을 하나씩 놓으세요. ★끼리는 대각선을 포함해 서로 붙을 수 없습니다.</p>
+
+  <div class="controls">
+    <span class="label">크기</span>
+    <div class="seg" id="sizes"></div>
+    <span class="spacer"></span>
+    <button id="undo">되돌리기</button>
+    <button id="clear">지우기</button>
+    <button id="hint">힌트</button>
+    <button id="giveup">정답 보기</button>
+    <button class="primary" id="new">새 게임</button>
+  </div>
+
+  <div class="status">
+    <span>별: <b id="count"></b></span>
+    <span>시간: <b id="time">00:00</b></span>
+    <span>힌트 사용: <b id="hints">0</b></span>
+  </div>
+
+  <div class="board" id="board"></div>
+  <div class="msg" id="msg"></div>
+
+  <div class="help">
+    · 칸을 누를 때마다 빈칸 → X → ★ → 빈칸으로 바뀝니다. X는 별이 없다고 표시해 두는 용도입니다.<br>
+    · 규칙에 어긋난 ★은 빨간색으로 표시됩니다.<br>
+    · 힌트는 틀린 ★이 있으면 그 칸을 짚어주고, 없으면 정답 ★ 하나를 놓아줍니다.
+  </div>
+</main>
+
+<script src="stars.js"></script>
+<script>
+const SIZES = [5, 6, 7, 8, 9];
+const $ = (id) => document.getElementById(id);
+let n = 6, regions, solution, marks, history, cells, hintCount, done, timer, start;
+
+function tick() {
+  const s = Math.floor((Date.now() - start) / 1000);
+  $('time').textContent = String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+
+function showMsg(text, kind) {
+  const m = $('msg');
+  m.textContent = text;
+  m.className = 'msg' + (text ? ' show ' + kind : '');
+}
+
+function newGame() {
+  ({ regions, solution } = Stars.generate(n));
+  marks = Array.from({ length: n }, () => Array(n).fill(0));
+  history = []; hintCount = 0; done = false;
+  $('hints').textContent = 0;
+  showMsg('');
+  build();
+  render();
+  clearInterval(timer);
+  start = Date.now();
+  timer = setInterval(tick, 1000);
+  tick();
+}
+
+function build() {
+  const board = $('board');
+  const cs = Math.max(34, Math.min(56, Math.floor((Math.min(window.innerWidth, 720) - 32) / n)));
+  board.style.setProperty('--cs', cs + 'px');
+  board.style.setProperty('--n', n);
+  board.innerHTML = '';
+  cells = [];
+  const wall = '3px solid var(--wall)', thin = '1px solid color-mix(in srgb, var(--wall) 30%, transparent)';
+  for (let r = 0; r < n; r++) {
+    cells.push([]);
+    for (let c = 0; c < n; c++) {
+      const b = document.createElement('button');
+      b.className = 'cell';
+      b.style.background = `var(--r${regions[r][c]})`;
+      // 칸마다 위·왼쪽 선만 그린다(영역이 바뀌면 굵게). 바깥 테두리는 아래·오른쪽도.
+      b.style.borderTop = r === 0 || regions[r - 1][c] !== regions[r][c] ? wall : thin;
+      b.style.borderLeft = c === 0 || regions[r][c - 1] !== regions[r][c] ? wall : thin;
+      if (r === n - 1) b.style.borderBottom = wall;
+      if (c === n - 1) b.style.borderRight = wall;
+      b.onclick = () => tap(r, c);
+      board.appendChild(b);
+      cells[r].push(b);
+    }
+  }
+}
+
+function render() {
+  const bad = Stars.conflicts(regions, marks);
+  let stars = 0;
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++) {
+      const v = marks[r][c], b = cells[r][c];
+      if (v === 2) stars++;
+      b.textContent = v === 2 ? '★' : v === 1 ? '×' : '';
+      b.classList.toggle('x', v === 1);
+      b.classList.toggle('bad', v === 2 && bad[r][c]);
+    }
+  $('count').textContent = `${stars} / ${n}`;
+  $('board').classList.toggle('locked', done);
+  for (const id of ['undo', 'clear', 'hint', 'giveup']) $(id).disabled = done;
+  $('undo').disabled = done || !history.length;
+}
+
+// changes: [[r, c, 새 값], ...] 를 한 번의 되돌리기 단위로 적용
+function apply(changes) {
+  history.push(changes.map(([r, c]) => [r, c, marks[r][c]]));
+  for (const [r, c, v] of changes) marks[r][c] = v;
+  render();
+  if (Stars.isSolved(regions, marks)) win();
+}
+
+function tap(r, c) {
+  if (done) return;
+  apply([[r, c, (marks[r][c] + 1) % 3]]);
+}
+
+function win() {
+  done = true;
+  clearInterval(timer);
+  tick();
+  const h = hintCount ? ` (힌트 ${hintCount}회)` : '';
+  showMsg(`🎉 완성! ${n}×${n} 별 배치를 ${$('time').textContent}만에 풀었습니다${h}.`, 'win');
+  render();
+}
+
+$('undo').onclick = () => {
+  if (done || !history.length) return;
+  for (const [r, c, v] of history.pop()) marks[r][c] = v;
+  showMsg('');
+  render();
+};
+
+$('clear').onclick = () => {
+  if (done) return;
+  const changes = [];
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (marks[r][c]) changes.push([r, c, 0]);
+  if (changes.length) apply(changes);
+  showMsg('');
+};
+
+$('hint').onclick = () => {
+  if (done) return;
+  const wrong = [], missing = [];
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) if (marks[r][c] === 2 && solution[r] !== c) wrong.push([r, c]);
+    if (marks[r][solution[r]] !== 2) missing.push(r);
+  }
+  hintCount++;
+  $('hints').textContent = hintCount;
+  if (wrong.length) {
+    const [r, c] = wrong[Math.floor(Math.random() * wrong.length)];
+    const b = cells[r][c];
+    b.classList.remove('flag'); void b.offsetWidth; b.classList.add('flag');
+    setTimeout(() => b.classList.remove('flag'), 1500);
+    showMsg('이 별은 정답 자리가 아니에요', 'info');
+  } else if (missing.length) {
+    const r = missing[Math.floor(Math.random() * missing.length)];
+    showMsg('');
+    apply([[r, solution[r], 2]]);
+  }
+};
+
+$('giveup').onclick = () => {
+  if (done) return;
+  done = true;
+  clearInterval(timer);
+  marks = marks.map((row, r) => row.map((_, c) => (solution[r] === c ? 2 : 0)));
+  render();
+  showMsg('정답입니다. "새 게임"을 눌러 다시 도전하세요.', 'info');
+};
+
+$('new').onclick = newGame;
+
+SIZES.forEach((s) => {
+  const b = document.createElement('button');
+  b.textContent = `${s}×${s}`;
+  b.dataset.v = s;
+  b.onclick = () => { n = s; refreshSeg(); newGame(); };
+  $('sizes').appendChild(b);
+});
+function refreshSeg() { for (const b of $('sizes').children) b.classList.toggle('on', +b.dataset.v === n); }
+refreshSeg();
+newGame();
+</script>
+</body>
+</html>
