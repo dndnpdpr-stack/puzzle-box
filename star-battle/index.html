@@ -22,7 +22,7 @@
   }
   .board {
     display: grid; grid-template-columns: repeat(var(--n), var(--cs));
-    justify-content: center; margin: 0 auto; touch-action: manipulation;
+    justify-content: center; margin: 0 auto; touch-action: none; /* 판 위 끌기가 화면 스크롤·확대가 되지 않게 */
   }
   .cell {
     width: var(--cs); height: var(--cs); padding: 0; border-radius: 0;
@@ -65,7 +65,8 @@
   <div class="msg" id="msg"></div>
 
   <div class="help">
-    · 칸을 누를 때마다 빈칸 → X → ★ → 빈칸으로 바뀝니다. X는 별이 없다고 표시해 두는 용도입니다.<br>
+    · 한 번 누르면 X(별이 없다는 표시), 두 번 빠르게 누르면 ★을 놓습니다. 다시 누르면 지워집니다.<br>
+    · 빈칸에서 끌면 지나가는 칸에 X가 놓이고, X에서 끌면 지나가는 X가 지워집니다.<br>
     · 규칙에 어긋난 ★은 빨간색으로 표시됩니다.<br>
     · 힌트는 틀린 ★이 있으면 그 칸을 짚어주고, 없으면 정답 ★ 하나를 놓아줍니다.
   </div>
@@ -91,7 +92,7 @@ function showMsg(text, kind) {
 function newGame() {
   ({ regions, solution } = Stars.generate(n));
   marks = Array.from({ length: n }, () => Array(n).fill(0));
-  history = []; hintCount = 0; done = false;
+  history = []; hintCount = 0; done = false; lastTap = null; stroke = null;
   $('hints').textContent = 0;
   showMsg('');
   build();
@@ -102,10 +103,17 @@ function newGame() {
   tick();
 }
 
+// 칸 크기를 화면 폭에 맞춘다(320px 폭 9×9도 들어가도록 최소 28px)
+function sizeBoard() {
+  const board = $('board');
+  board.style.setProperty('--cs', '28px'); // 이전의 큰 판이 화면 폭을 늘려 놓은 채로 재지 않도록 먼저 줄인다
+  const cs = Math.max(28, Math.min(56, Math.floor((Math.min(window.innerWidth, 720) - 32) / n)));
+  board.style.setProperty('--cs', cs + 'px');
+}
+
 function build() {
   const board = $('board');
-  const cs = Math.max(34, Math.min(56, Math.floor((Math.min(window.innerWidth, 720) - 32) / n)));
-  board.style.setProperty('--cs', cs + 'px');
+  sizeBoard();
   board.style.setProperty('--n', n);
   board.innerHTML = '';
   cells = [];
@@ -121,7 +129,9 @@ function build() {
       b.style.borderLeft = c === 0 || regions[r][c - 1] !== regions[r][c] ? wall : thin;
       if (r === n - 1) b.style.borderBottom = wall;
       if (c === n - 1) b.style.borderRight = wall;
-      b.onclick = () => tap(r, c);
+      b.dataset.r = r; b.dataset.c = c;
+      // 마우스·터치는 아래 포인터 처리에서 다룬다. 키보드(Enter/Space)로 누른 경우만 여기서 받는다.
+      b.onclick = (e) => { if (e.detail === 0) tap(r, c); };
       board.appendChild(b);
       cells[r].push(b);
     }
@@ -153,10 +163,70 @@ function apply(changes) {
   if (Stars.isSolved(regions, marks)) win();
 }
 
+// 한 번 누르기: 빈칸 ↔ X (★은 지움). 같은 칸을 빨리 두 번 누르기: ★ 놓기/지우기.
+// 첫 누르기는 바로 반영하고, 두 번째 누르기가 오면 첫 누르기를 되돌린 뒤 ★을 토글한다(되돌리기 한 번 단위).
+const DOUBLE_MS = 350;
+let lastTap = null;
 function tap(r, c) {
   if (done) return;
-  apply([[r, c, (marks[r][c] + 1) % 3]]);
+  const now = Date.now();
+  if (lastTap && lastTap.r === r && lastTap.c === c && now - lastTap.t < DOUBLE_MS) {
+    lastTap = null;
+    for (const [a, b, v] of history.pop()) marks[a][b] = v;
+    apply([[r, c, marks[r][c] === 2 ? 0 : 2]]);
+    return;
+  }
+  lastTap = { r, c, t: now };
+  apply([[r, c, marks[r][c] === 0 ? 1 : 0]]);
 }
+
+// 끌기: 빈칸에서 시작하면 지나가는 빈칸에 X, X에서 시작하면 지나가는 X를 지운다. ★은 건드리지 않는다.
+let stroke = null;
+function cellAt(x, y) {
+  const el = document.elementFromPoint(x, y);
+  return el && el.classList.contains('cell') && $('board').contains(el) ? [+el.dataset.r, +el.dataset.c] : null;
+}
+function strokePaint([r, c]) {
+  const key = r * n + c;
+  if (stroke.seen.has(key)) return;
+  stroke.seen.add(key);
+  const from = stroke.mode === 'x' ? 0 : 1, to = 1 - from;
+  if (marks[r][c] !== from) return;
+  stroke.undo.push([r, c, from]);
+  marks[r][c] = to;
+}
+$('board').addEventListener('pointerdown', (e) => {
+  if (done || e.button !== 0) return;
+  const cell = cellAt(e.clientX, e.clientY);
+  if (!cell) return;
+  e.preventDefault();
+  const v = marks[cell[0]][cell[1]];
+  stroke = { start: cell, mode: v === 0 ? 'x' : v === 1 ? 'erase' : null, moved: false, seen: new Set(), undo: [] };
+});
+document.addEventListener('pointermove', (e) => {
+  if (!stroke) return;
+  const cell = cellAt(e.clientX, e.clientY);
+  if (!cell || (!stroke.moved && cell[0] === stroke.start[0] && cell[1] === stroke.start[1])) return;
+  if (!stroke.mode) return; // ★에서 시작한 끌기는 아무것도 하지 않는다
+  if (!stroke.moved) { stroke.moved = true; strokePaint(stroke.start); }
+  strokePaint(cell);
+  render();
+});
+function endStroke(e) {
+  if (!stroke) return;
+  const s = stroke;
+  stroke = null;
+  if (!s.moved) {
+    if (e.type === 'pointerup') tap(s.start[0], s.start[1]);
+    return;
+  }
+  lastTap = null;
+  if (s.undo.length) history.push(s.undo);
+  render();
+  if (Stars.isSolved(regions, marks)) win();
+}
+document.addEventListener('pointerup', endStroke);
+document.addEventListener('pointercancel', endStroke);
 
 function win() {
   done = true;
@@ -168,6 +238,7 @@ function win() {
 }
 
 $('undo').onclick = () => {
+  lastTap = null;
   if (done || !history.length) return;
   for (const [r, c, v] of history.pop()) marks[r][c] = v;
   showMsg('');
@@ -175,6 +246,7 @@ $('undo').onclick = () => {
 };
 
 $('clear').onclick = () => {
+  lastTap = null;
   if (done) return;
   const changes = [];
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (marks[r][c]) changes.push([r, c, 0]);
@@ -183,6 +255,7 @@ $('clear').onclick = () => {
 };
 
 $('hint').onclick = () => {
+  lastTap = null;
   if (done) return;
   const wrong = [], missing = [];
   for (let r = 0; r < n; r++) {
@@ -224,6 +297,7 @@ SIZES.forEach((s) => {
 });
 function refreshSeg() { for (const b of $('sizes').children) b.classList.toggle('on', +b.dataset.v === n); }
 refreshSeg();
+addEventListener('resize', sizeBoard); // 화면을 돌리거나 창 크기를 바꾸면 칸 크기를 다시 맞춘다
 newGame();
 </script>
 </body>
