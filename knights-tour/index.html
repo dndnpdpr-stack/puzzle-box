@@ -13,14 +13,16 @@
   .sq {
     width: var(--cs); height: var(--cs); padding: 0; border-radius: 6px;
     font-size: calc(var(--cs) * 0.36); font-weight: 600; font-variant-numeric: tabular-nums;
-    border: 2px solid transparent; background: var(--panel); color: var(--ink);
+    border: 2px solid transparent; color: var(--ink);
   }
-  .sq.dark { background: var(--given); }
+  /* 배경은 .board 아래에서 정해 공통 button:hover(회색)가 체스판 무늬를 덮지 않게 한다 */
+  .board .sq { background: var(--panel); }
+  .board .sq.dark { background: var(--given); }
   @media (hover: hover) { .board:not(.locked) .sq:not(.cur):not(.hint):hover { background: var(--sel); } }
   .sq.done { color: var(--muted); }
-  .sq.cur { background: var(--accent); color: #fff; }
+  .board .sq.cur { background: var(--accent); color: #fff; }
   .sq.can { border-color: var(--accent); }
-  .sq.hint { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 25%, var(--panel)); }
+  .board .sq.hint { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 25%, var(--panel)); }
   .board.locked .sq { cursor: default; }
 </style>
 </head>
