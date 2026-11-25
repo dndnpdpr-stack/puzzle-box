@@ -70,7 +70,7 @@
   <div class="help">
     · 한 번 누르면 X(별이 없다는 표시), 두 번 빠르게 누르면 ★을 놓습니다. 다시 누르면 지워집니다.<br>
     · 빈칸에서 끌면 지나가는 칸에 X가 놓이고, X에서 끌면 지나가는 X가 지워집니다.<br>
-    · 규칙에 어긋난 ★은 빨간색으로 표시됩니다.<br>
+    · 정답 자리가 아니거나 규칙에 어긋난 ★은 빨간색으로 표시됩니다.<br>
     · 힌트는 정답을 보여주지 않고, ★이 올 수 없는 칸을 찾아 X를 놓고 이유를 알려줍니다(초록 칸이 근거). 틀린 ★이나 X가 있으면 먼저 짚어줍니다.
   </div>
 </main>
@@ -178,7 +178,8 @@ function render() {
       if (v === 2) stars++;
       b.textContent = v === 2 ? '★' : v === 1 ? '×' : '';
       b.classList.toggle('x', v === 1);
-      b.classList.toggle('bad', v === 2 && bad[r][c]);
+      // 규칙에 어긋나거나 정답 자리가 아닌 ★은 빨간색
+      b.classList.toggle('bad', v === 2 && (bad[r][c] || solution[r] !== c));
       b.classList.toggle('focus', !!hintMarks && hintMarks.focus.has(r * n + c));
       b.classList.toggle('hinted', !!hintMarks && hintMarks.ex.has(r * n + c));
     }
