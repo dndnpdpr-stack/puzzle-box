@@ -60,3 +60,92 @@ test('candidates', () => {
   const elim = Array(81).fill(0); elim[0] = 1 << full[0];
   assert.equal(S.candidates(g, elim)[0], 0);
 });
+
+// ---- Task 2: 기법 엔진 ----
+const ALLM = 0b1111111110;
+const maskOf = (...ds) => ds.reduce((m, d) => m | (1 << d), 0);
+const blank = () => Array(81).fill(0);
+const allMasks = () => Array(81).fill(ALLM);
+const elimKeys = (step) => (step.eliminate || []).map((e) => e.cell * 10 + e.digit).sort((a, b) => a - b);
+const keys = (pairs) => pairs.map(([c, d]) => c * 10 + d).sort((a, b) => a - b);
+
+test('hidden-single', () => {
+  const m = allMasks();
+  for (let c = 0; c < 9; c++) if (c !== 3) m[c] &= ~(1 << 5);
+  const s = S.findStep(blank(), m);
+  assert.equal(s.tech, 'hidden-single');
+  assert.equal(s.level, 1);
+  assert.deepEqual(s.place, { cell: 3, digit: 5 });
+});
+
+test('naked-single', () => {
+  const m = allMasks();
+  m[40] = maskOf(7);
+  const s = S.findStep(blank(), m);
+  assert.equal(s.tech, 'naked-single');
+  assert.deepEqual(s.place, { cell: 40, digit: 7 });
+});
+
+test('pointing', () => {
+  const m = allMasks();
+  for (const i of [2, 9, 10, 11, 18, 19, 20]) m[i] &= ~(1 << 3);
+  const s = S.findStep(blank(), m);
+  assert.equal(s.tech, 'pointing');
+  assert.equal(s.level, 2);
+  assert.deepEqual(elimKeys(s), keys([3, 4, 5, 6, 7, 8].map((c) => [c, 3])));
+});
+
+test('naked-pair', () => {
+  const m = allMasks();
+  m[0] = m[1] = maskOf(1, 2);
+  const s = S.findStep(blank(), m);
+  assert.equal(s.tech, 'naked-pair');
+  assert.deepEqual(s.unit, { type: 'row', index: 0 });
+  assert.deepEqual(elimKeys(s), keys([2, 3, 4, 5, 6, 7, 8].flatMap((c) => [[c, 1], [c, 2]])));
+});
+
+test('x-wing', () => {
+  const m = allMasks();
+  for (const r of [1, 5]) for (let c = 0; c < 9; c++) if (c !== 2 && c !== 7) m[r * 9 + c] &= ~(1 << 4);
+  const s = S.findStep(blank(), m);
+  assert.equal(s.tech, 'x-wing');
+  assert.equal(s.level, 3);
+  const want = [];
+  for (let r = 0; r < 9; r++) if (r !== 1 && r !== 5) for (const c of [2, 7]) want.push([r * 9 + c, 4]);
+  assert.deepEqual(elimKeys(s), keys(want));
+});
+
+test('xy-wing', () => {
+  const m = allMasks();
+  m[0] = maskOf(1, 2);  // 축 r0c0
+  m[5] = maskOf(1, 3);  // 날개 r0c5 (같은 행)
+  m[45] = maskOf(2, 3); // 날개 r5c0 (같은 열)
+  const s = S.findStep(blank(), m);
+  assert.equal(s.tech, 'xy-wing');
+  assert.deepEqual(elimKeys(s), keys([[50, 3]]));
+});
+
+test('grade: one blank is level 1', () => {
+  const g = S.randomFull();
+  g[30] = 0;
+  assert.equal(S.grade(g).level, 1);
+});
+
+test('grade steps are sound', () => {
+  let graded = 0;
+  for (let k = 0; k < 20; k++) {
+    const sol = S.randomFull();
+    const g = sol.slice();
+    for (const i of [...Array(81).keys()].sort(() => Math.random() - 0.5).slice(0, 50)) {
+      const v = g[i]; g[i] = 0;
+      if (S.countSolutions(g) !== 1) g[i] = v;
+    }
+    const res = S.grade(g);
+    if (res.level) graded++;
+    for (const st of res.steps) {
+      if (st.place) assert.equal(st.place.digit, sol[st.place.cell], `${st.tech} place`);
+      for (const e of st.eliminate || []) assert.notEqual(e.digit, sol[e.cell], `${st.tech}가 정답 숫자를 지움`);
+    }
+  }
+  assert.ok(graded >= 15, `기법으로 풀린 판 ${graded}/20`);
+});

@@ -94,6 +94,180 @@
     return units.every((u) => new Set(u.cells.map((i) => grid[i])).size === 9);
   }
 
-  const api = { units, peers, candidates, countSolutions, solve, randomFull, isValidFull };
+  // ---- 기법 엔진 ----
+  // 결과 Step: { tech, level, place?: {cell, digit}, eliminate?: [{cell, digit}], focus: 근거 칸들, unit?: {type, index}, line?: {type, index}, digits?: [] }
+  const unitRef = (u) => ({ type: u.type, index: u.index });
+  function combos(arr, k, start = 0, pick = [], out = []) {
+    if (pick.length === k) { out.push(pick.slice()); return out; }
+    for (let i = start; i < arr.length; i++) { pick.push(arr[i]); combos(arr, k, i + 1, pick, out); pick.pop(); }
+    return out;
+  }
+  const placedIn = (grid, u) => u.cells.reduce((m, i) => (grid[i] ? m | (1 << grid[i]) : m), 0);
+  const cellsWith = (grid, masks, cells, d) => cells.filter((i) => !grid[i] && masks[i] & (1 << d));
+  const LINES = units.filter((u) => u.type !== 'box');
+  const BOXES = units.filter((u) => u.type === 'box');
+  const lineOf = (type, i) => (type === 'row' ? units[rowOf(i)] : units[9 + colOf(i)]);
+
+  function hiddenSingle(grid, masks) {
+    for (const u of units) {
+      const placed = placedIn(grid, u);
+      for (let d = 1; d <= 9; d++) {
+        if (placed & (1 << d)) continue;
+        const cs = cellsWith(grid, masks, u.cells, d);
+        if (cs.length === 1) return { tech: 'hidden-single', level: 1, place: { cell: cs[0], digit: d }, unit: unitRef(u), focus: u.cells.filter((i) => i !== cs[0]) };
+      }
+    }
+    return null;
+  }
+
+  function nakedSingle(grid, masks) {
+    for (let i = 0; i < 81; i++)
+      if (!grid[i] && bitCount(masks[i]) === 1) {
+        const d = digitsOf(masks[i])[0];
+        return { tech: 'naked-single', level: 1, place: { cell: i, digit: d }, focus: PEERS[i].filter((j) => grid[j]) };
+      }
+    return null;
+  }
+
+  // 박스 안 d가 한 줄에만(pointing), 또는 줄 안 d가 한 박스에만(box-line)
+  function intersections(grid, masks) {
+    for (const box of BOXES)
+      for (let d = 1; d <= 9; d++) {
+        const cs = cellsWith(grid, masks, box.cells, d);
+        if (cs.length < 2) continue;
+        for (const type of ['row', 'col']) {
+          const line = lineOf(type, cs[0]);
+          if (!cs.every((i) => line.cells.includes(i))) continue;
+          const ex = cellsWith(grid, masks, line.cells, d).filter((i) => !box.cells.includes(i));
+          if (ex.length) return { tech: 'pointing', level: 2, unit: unitRef(box), line: unitRef(line), digits: [d], focus: cs, eliminate: ex.map((cell) => ({ cell, digit: d })) };
+        }
+      }
+    for (const line of LINES)
+      for (let d = 1; d <= 9; d++) {
+        const cs = cellsWith(grid, masks, line.cells, d);
+        if (cs.length < 2) continue;
+        const box = units[18 + boxOf(cs[0])];
+        if (!cs.every((i) => boxOf(i) === box.index)) continue;
+        const ex = cellsWith(grid, masks, box.cells, d).filter((i) => !line.cells.includes(i));
+        if (ex.length) return { tech: 'box-line', level: 2, unit: unitRef(line), line: unitRef(box), digits: [d], focus: cs, eliminate: ex.map((cell) => ({ cell, digit: d })) };
+      }
+    return null;
+  }
+
+  const NAMES = { 2: 'pair', 3: 'triple' };
+  function nakedSubset(grid, masks, k) {
+    for (const u of units) {
+      const empty = u.cells.filter((i) => !grid[i]);
+      const small = empty.filter((i) => bitCount(masks[i]) >= 2 && bitCount(masks[i]) <= k);
+      for (const set of combos(small, k)) {
+        const union = set.reduce((m, i) => m | masks[i], 0);
+        if (bitCount(union) !== k) continue;
+        const ex = [];
+        for (const i of empty) if (!set.includes(i)) for (const d of digitsOf(masks[i] & union)) ex.push({ cell: i, digit: d });
+        if (ex.length) return { tech: `naked-${NAMES[k]}`, level: 2, unit: unitRef(u), digits: digitsOf(union), focus: set, eliminate: ex };
+      }
+    }
+    return null;
+  }
+
+  function hiddenSubset(grid, masks, k) {
+    for (const u of units) {
+      const placed = placedIn(grid, u);
+      const ds = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter((d) => !(placed & (1 << d)));
+      const where = {};
+      for (const d of ds) where[d] = cellsWith(grid, masks, u.cells, d);
+      const okDs = ds.filter((d) => where[d].length >= 2 && where[d].length <= k);
+      for (const set of combos(okDs, k)) {
+        const cells = [...new Set(set.flatMap((d) => where[d]))];
+        if (cells.length !== k) continue;
+        const keep = set.reduce((m, d) => m | (1 << d), 0);
+        const ex = [];
+        for (const i of cells) for (const d of digitsOf(masks[i] & ~keep)) ex.push({ cell: i, digit: d });
+        if (ex.length) return { tech: `hidden-${NAMES[k]}`, level: 2, unit: unitRef(u), digits: set, focus: cells, eliminate: ex };
+      }
+    }
+    return null;
+  }
+
+  // X-Wing(k=2), Swordfish(k=3): d가 줄 k개에서 반대 방향 줄 k개에만
+  function fish(grid, masks, k) {
+    for (let d = 1; d <= 9; d++)
+      for (const [base, cover] of [['row', 'col'], ['col', 'row']]) {
+        const pos = (i) => (cover === 'col' ? colOf(i) : rowOf(i));
+        const lines = LINES.filter((u) => u.type === base)
+          .map((u) => ({ u, cs: cellsWith(grid, masks, u.cells, d) }))
+          .filter((x) => x.cs.length >= 2 && x.cs.length <= k);
+        for (const set of combos(lines, k)) {
+          const covers = new Set(set.flatMap((x) => x.cs.map(pos)));
+          if (covers.size !== k) continue;
+          const baseIdx = new Set(set.map((x) => x.u.index));
+          const ex = [];
+          for (const ci of covers) {
+            const coverUnit = units[(cover === 'row' ? 0 : 9) + ci];
+            for (const i of cellsWith(grid, masks, coverUnit.cells, d)) {
+              const b = base === 'row' ? rowOf(i) : colOf(i);
+              if (!baseIdx.has(b)) ex.push({ cell: i, digit: d });
+            }
+          }
+          if (ex.length) return { tech: k === 2 ? 'x-wing' : 'swordfish', level: 3, line: { type: cover, index: -1 }, digits: [d], focus: set.flatMap((x) => x.cs), eliminate: ex };
+        }
+      }
+    return null;
+  }
+
+  function xyWing(grid, masks) {
+    const bi = [];
+    for (let i = 0; i < 81; i++) if (!grid[i] && bitCount(masks[i]) === 2) bi.push(i);
+    for (const p of bi) {
+      const [x, y] = digitsOf(masks[p]);
+      const wings = bi.filter((w) => w !== p && sees(p, w));
+      for (const a of wings)
+        for (const b of wings) {
+          const ma = masks[a], mb = masks[b];
+          if (!(ma & (1 << x)) || ma & (1 << y) || !(mb & (1 << y)) || mb & (1 << x)) continue;
+          const za = ma & ~(1 << x), zb = mb & ~(1 << y);
+          if (za !== zb) continue;
+          const z = digitsOf(za)[0];
+          const ex = [];
+          for (let i = 0; i < 81; i++)
+            if (i !== p && i !== a && i !== b && !grid[i] && masks[i] & za && sees(i, a) && sees(i, b)) ex.push({ cell: i, digit: z });
+          if (ex.length) return { tech: 'xy-wing', level: 3, digits: [z], focus: [p, a, b], eliminate: ex };
+        }
+    }
+    return null;
+  }
+
+  function findStep(grid, masks) {
+    return hiddenSingle(grid, masks) || nakedSingle(grid, masks) || intersections(grid, masks)
+      || nakedSubset(grid, masks, 2) || hiddenSubset(grid, masks, 2)
+      || nakedSubset(grid, masks, 3) || hiddenSubset(grid, masks, 3)
+      || fish(grid, masks, 2) || fish(grid, masks, 3) || xyWing(grid, masks);
+  }
+
+  // 한 수를 판·후보에 적용
+  function applyStep(grid, masks, st) {
+    if (st.place) {
+      const { cell, digit } = st.place;
+      grid[cell] = digit; masks[cell] = 0;
+      for (const j of PEERS[cell]) masks[j] &= ~(1 << digit);
+    }
+    for (const e of st.eliminate || []) masks[e.cell] &= ~(1 << e.digit);
+  }
+
+  // 기법만으로 풀어 보고, 필요한 가장 높은 단계를 돌려준다(막히면 level null)
+  function grade(puzzle) {
+    const g = puzzle.slice(), masks = candidates(g), steps = [];
+    let level = 0;
+    for (;;) {
+      if (g.every((v) => v)) return { level: Math.max(level, 1), steps };
+      const st = findStep(g, masks);
+      if (!st) return { level: null, steps };
+      steps.push(st);
+      level = Math.max(level, st.level);
+      applyStep(g, masks, st);
+    }
+  }
+
+  const api = { units, peers, candidates, countSolutions, solve, randomFull, isValidFull, findStep, grade };
   if (typeof module !== 'undefined') module.exports = api; else root.Sudoku = api;
 })(this);
