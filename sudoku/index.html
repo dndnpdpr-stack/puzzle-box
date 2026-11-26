@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스도쿠</title>
+<link rel="stylesheet" href="../common.css">
+<style>
+  .board {
+    display: grid; grid-template-columns: repeat(9, var(--cs));
+    width: max-content; margin: 0 auto; border: 3px solid var(--ink); touch-action: manipulation;
+  }
+  .cell {
+    width: var(--cs); height: var(--cs); padding: 0; border-radius: 0; position: relative;
+    border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    background: var(--panel); color: var(--accent); font-size: calc(var(--cs) * 0.56);
+    font-variant-numeric: tabular-nums; line-height: 1;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .cell.br { border-right: 3px solid var(--ink); }
+  .cell.bb { border-bottom: 3px solid var(--ink); }
+  .cell.c8 { border-right: 0; }
+  .cell.r8 { border-bottom: 0; }
+  .board .cell.peer { background: color-mix(in srgb, var(--sel) 50%, var(--panel)); }
+  .board .cell.same { background: color-mix(in srgb, var(--accent) 28%, var(--panel)); }
+  .board .cell.sel { background: var(--sel); }
+  .board .cell.focus { background: color-mix(in srgb, var(--ok) 22%, var(--panel)); }
+  .cell.given { color: var(--ink); font-weight: 700; }
+  .cell.bad { color: var(--bad); }
+  .board .cell.bad { background: color-mix(in srgb, var(--bad) 14%, var(--panel)); }
+  .cell.target { box-shadow: inset 0 0 0 3px var(--ok); }
+  .cell.elim { box-shadow: inset 0 0 0 3px var(--accent); }
+  .cell.flag { animation: flag 0.5s 3; }
+  @keyframes flag { 50% { box-shadow: inset 0 0 0 4px var(--bad); } }
+  .memo {
+    position: absolute; inset: 2px; display: grid; grid-template-columns: repeat(3, 1fr);
+    font-size: calc(var(--cs) * 0.26); color: var(--muted); line-height: 1; align-items: center; justify-items: center;
+  }
+  .board.locked .cell { cursor: default; }
+  .pad {
+    display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px;
+    width: calc(var(--cs) * 9 + 6px); margin: 12px auto 0;
+  }
+  .pad button { padding: 6px 0 4px; font-size: 20px; font-weight: 600; line-height: 1.1; touch-action: manipulation; }
+  .pad button.used { opacity: .35; }
+  .pad button small { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+  .tools { display: flex; gap: 8px; width: calc(var(--cs) * 9 + 6px); margin: 8px auto 0; }
+  .tools button { flex: 1; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="../">← 퍼즐 목록</a>
+  <h1>스도쿠</h1>
+  <p class="sub">가로줄·세로줄·3×3 박스마다 1~9를 한 번씩 채우세요.</p>
+
+  <div class="controls">
+    <span class="label">난이도</span>
+    <div class="seg" id="levels"></div>
+    <span class="spacer"></span>
+    <button id="undo">되돌리기</button>
+    <button id="clear">지우기</button>
+    <button id="hint">힌트</button>
+    <button id="giveup">정답 보기</button>
+    <button class="primary" id="new">새 게임</button>
+  </div>
+
+  <div class="status">
+    <span>남은 칸: <b id="left"></b></span>
+    <span>시간: <b id="time">00:00</b></span>
+    <span>힌트 사용: <b id="hints">0</b></span>
+  </div>
+
+  <div class="board" id="board"></div>
+  <div class="pad" id="pad"></div>
+  <div class="tools">
+    <button id="memo" title="N 키로도 켜고 끌 수 있어요">✎ 메모</button>
+    <button id="erase">지우개</button>
+  </div>
+  <div class="msg" id="msg"></div>
+
+  <div class="help">
+    · 칸을 누르고 아래 숫자를 누르세요(PC는 키보드 1~9, 방향키, Backspace도 됩니다). 같은 숫자를 다시 누르면 지워집니다.<br>
+    · "메모"를 켜면 숫자가 후보 메모로 들어갑니다(N 키). 숫자를 넣으면 같은 줄·열·박스의 메모에서 그 숫자가 자동으로 지워집니다.<br>
+    · 정답과 다른 숫자는 빨간색으로 표시됩니다.<br>
+    · 힌트는 정답을 채워 주지 않고 다음 한 수와 그 이유를 알려줍니다. 초록 칸이 근거, 파란 테두리는 메모에서 후보를 지운 칸입니다.
+  </div>
+</main>
+
+<script src="sudoku.js"></script>
+<script>
+const LEVELS = [{ name: '쉬움', v: 1 }, { name: '보통', v: 2 }, { name: '어려움', v: 3 }];
+const $ = (id) => document.getElementById(id);
+const bit = (d) => 1 << d;
+let level = 2, solution, grid, given, memo, elim, history, selected = -1, memoMode = false;
+let hintCount, done, timer, start, cells, hintMarks = null;
+
+function tick() {
+  const s = Math.floor((Date.now() - start) / 1000);
+  $('time').textContent = String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+function showMsg(text, kind) {
+  const m = $('msg');
+  m.textContent = text;
+  m.className = 'msg' + (text ? ' show ' + kind : '');
+}
+
+// 칸 크기를 화면 폭에 맞춘다(큰 판이 화면 폭을 늘려 놓은 채로 재지 않도록 먼저 줄인다)
+function sizeBoard() {
+  const board = $('board');
+  board.style.setProperty('--cs', '30px');
+  document.documentElement.style.setProperty('--cs', '30px');
+  const cs = Math.max(30, Math.min(56, Math.floor((Math.min(window.innerWidth, 720) - 32 - 6) / 9)));
+  document.documentElement.style.setProperty('--cs', cs + 'px');
+  board.style.removeProperty('--cs');
+}
+
+function build() {
+  const board = $('board');
+  board.innerHTML = '';
+  cells = [];
+  for (let i = 0; i < 81; i++) {
+    const r = Math.floor(i / 9), c = i % 9;
+    const b = document.createElement('button');
+    b.className = 'cell' + (c % 3 === 2 && c < 8 ? ' br' : '') + (r % 3 === 2 && r < 8 ? ' bb' : '') + (c === 8 ? ' c8' : '') + (r === 8 ? ' r8' : '');
+    b.onclick = () => { selected = i; render(); };
+    board.appendChild(b);
+    cells.push(b);
+  }
+  const pad = $('pad');
+  pad.innerHTML = '';
+  for (let d = 1; d <= 9; d++) {
+    const b = document.createElement('button');
+    b.dataset.d = d;
+    b.innerHTML = `${d}<small></small>`;
+    b.onclick = () => input(d);
+    pad.appendChild(b);
+  }
+}
+
+function newGame() {
+  ({ puzzle: grid, solution } = Sudoku.generate(level));
+  given = grid.map((v) => v > 0);
+  memo = Array(81).fill(0);
+  elim = Array(81).fill(0);
+  history = []; selected = -1; hintCount = 0; done = false; hintMarks = null;
+  $('hints').textContent = 0;
+  showMsg('');
+  render();
+  clearInterval(timer);
+  start = Date.now();
+  timer = setInterval(tick, 1000);
+  tick();
+}
+
+function render() {
+  const sel = selected >= 0 ? selected : -1;
+  const selVal = sel >= 0 ? grid[sel] : 0;
+  const peers = new Set(sel >= 0 ? Sudoku.peers(sel) : []);
+  const count = Array(10).fill(0);
+  for (const v of grid) count[v]++;
+  for (let i = 0; i < 81; i++) {
+    const b = cells[i], v = grid[i];
+    const bad = v && (v !== solution[i] || Sudoku.peers(i).some((j) => grid[j] === v));
+    b.classList.toggle('given', given[i]);
+    b.classList.toggle('bad', !!bad && !given[i]);
+    b.classList.toggle('sel', i === sel);
+    b.classList.toggle('peer', peers.has(i));
+    b.classList.toggle('same', !!selVal && v === selVal && i !== sel);
+    b.classList.toggle('focus', !!hintMarks && hintMarks.focus.has(i));
+    b.classList.toggle('target', !!hintMarks && hintMarks.target === i);
+    b.classList.toggle('elim', !!hintMarks && hintMarks.elim.has(i));
+    if (v) b.textContent = v;
+    else if (memo[i]) {
+      b.innerHTML = '<div class="memo">' + [1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => `<span>${memo[i] & bit(d) ? d : ''}</span>`).join('') + '</div>';
+    } else b.textContent = '';
+  }
+  for (const b of $('pad').children) {
+    const d = +b.dataset.d, left = 9 - count[d];
+    b.querySelector('small').textContent = left;
+    // 9개를 다 쓰면 흐리게만 한다(틀린 숫자 때문에 개수가 넘쳐도 정답 칸에 넣을 수 있도록 누를 수는 있게 둔다)
+    b.classList.toggle('used', left <= 0);
+    b.disabled = done;
+  }
+  $('left').textContent = count[0];
+  $('memo').classList.toggle('on', memoMode);
+  $('board').classList.toggle('locked', done);
+  for (const id of ['clear', 'hint', 'giveup', 'erase', 'memo']) $(id).disabled = done;
+  $('undo').disabled = done || !history.length;
+}
+
+const snapshot = () => history.push({ grid: grid.slice(), memo: memo.slice(), elim: elim.slice() });
+function editable() { return !done && selected >= 0 && !given[selected]; }
+
+function input(d) {
+  if (!editable()) return;
+  const i = selected;
+  hintMarks = null;
+  if (memoMode) {
+    if (grid[i]) return;
+    snapshot();
+    memo[i] ^= bit(d);
+  } else {
+    snapshot();
+    if (grid[i] === d) grid[i] = 0;
+    else {
+      grid[i] = d;
+      memo[i] = 0;
+      for (const j of Sudoku.peers(i)) memo[j] &= ~bit(d);
+    }
+  }
+  showMsg('');
+  render();
+  checkWin();
+}
+
+function erase() {
+  if (!editable()) return;
+  const i = selected;
+  if (!grid[i] && !memo[i]) return;
+  hintMarks = null;
+  snapshot();
+  if (grid[i]) grid[i] = 0; else memo[i] = 0;
+  showMsg('');
+  render();
+}
+
+function checkWin() {
+  if (!grid.every((v, i) => v === solution[i])) return;
+  done = true;
+  clearInterval(timer);
+  tick();
+  const h = hintCount ? ` (힌트 ${hintCount}회)` : '';
+  showMsg(`🎉 완성! ${LEVELS.find((l) => l.v === level).name} 스도쿠를 ${$('time').textContent}만에 풀었습니다${h}.`, 'win');
+  render();
+}
+
+// ---- 힌트 문구 ----
+const unitName = (u) => `${u.index + 1}번째 ${u.type === 'row' ? '가로줄' : u.type === 'col' ? '세로줄' : '박스'}`;
+function hintText(h) {
+  const d = h.digits ? h.digits.join('·') : '';
+  switch (h.tech) {
+    case 'hidden-single': return `${unitName(h.unit)}에서 ${h.place.digit}이(가) 들어갈 수 있는 칸은 초록 테두리 칸뿐이에요.`;
+    case 'naked-single': return `초록 테두리 칸에 들어갈 수 있는 숫자는 ${h.place.digit}뿐이에요. 초록 칸들에 나머지 숫자가 다 있어요.`;
+    case 'pointing': return `${unitName(h.unit)}에서 ${d}은(는) 초록 칸들, 즉 ${unitName(h.line)}에만 올 수 있어요. 그래서 그 줄의 다른 칸 메모에서 ${d}을(를) 지웠어요.`;
+    case 'box-line': return `${unitName(h.unit)}에서 ${d}은(는) 초록 칸들, 즉 ${unitName(h.line)} 안에만 올 수 있어요. 그래서 그 박스의 다른 칸 메모에서 ${d}을(를) 지웠어요.`;
+    case 'naked-pair': case 'naked-triple':
+      return `초록 칸들이 ${d}을(를) 나눠 가져요. 그래서 같은 ${unitName(h.unit)}의 다른 칸 메모에서 ${d}을(를) 지웠어요.`;
+    case 'hidden-pair': case 'hidden-triple':
+      return `${unitName(h.unit)}에서 ${d}은(는) 초록 칸들에만 올 수 있어요. 그래서 초록 칸의 다른 메모를 지웠어요.`;
+    case 'x-wing': case 'swordfish': {
+      const k = h.tech === 'x-wing' ? 2 : 3, name = h.tech === 'x-wing' ? 'X-Wing' : 'Swordfish';
+      const dir = h.line.type === 'col' ? '세로줄' : '가로줄';
+      return `${d}이(가) 초록 칸들에서 ${dir} ${k}개에 묶여 있어요(${name}). 그래서 그 ${dir}들의 다른 칸 메모에서 ${d}을(를) 지웠어요.`;
+    }
+    case 'xy-wing': return `초록 칸 세 개(XY-Wing)에서 어느 경우든 ${d}은(는) 양쪽 날개 중 하나에 들어가요. 그래서 두 날개를 모두 보는 칸 메모에서 ${d}을(를) 지웠어요.`;
+    default: return '';
+  }
+}
+
+$('hint').onclick = () => {
+  if (done) return;
+  hintCount++;
+  $('hints').textContent = hintCount;
+  const h = Sudoku.hint(grid, solution, elim);
+  hintMarks = null;
+  if (h.rule === 'wrong') {
+    const i = h.focus[0];
+    selected = i;
+    cells[i].classList.remove('flag'); void cells[i].offsetWidth; cells[i].classList.add('flag');
+    setTimeout(() => cells[i].classList.remove('flag'), 1500);
+    showMsg('이 칸의 숫자가 틀렸어요.', 'info');
+  } else if (h.rule === 'step' && h.place) {
+    hintMarks = { focus: new Set(h.focus), target: h.place.cell, elim: new Set() };
+    selected = h.place.cell;
+    showMsg(hintText(h), 'info');
+  } else if (h.rule === 'step') {
+    snapshot();
+    const cand = Sudoku.candidates(grid, elim);
+    for (const e of h.eliminate) {
+      if (!memo[e.cell]) memo[e.cell] = cand[e.cell];
+      memo[e.cell] &= ~bit(e.digit);
+      elim[e.cell] |= bit(e.digit);
+    }
+    hintMarks = { focus: new Set(h.focus), target: -1, elim: new Set(h.eliminate.map((e) => e.cell)) };
+    showMsg(hintText(h), 'info');
+  } else {
+    showMsg('여기서 더 찾을 수 있는 힌트가 없어요.', 'info');
+  }
+  render();
+};
+
+$('undo').onclick = () => {
+  if (done || !history.length) return;
+  ({ grid, memo, elim } = history.pop());
+  hintMarks = null;
+  showMsg('');
+  render();
+};
+
+$('clear').onclick = () => {
+  if (done) return;
+  snapshot();
+  grid = grid.map((v, i) => (given[i] ? v : 0));
+  memo = Array(81).fill(0);
+  elim = Array(81).fill(0);
+  hintMarks = null;
+  showMsg('');
+  render();
+};
+
+$('giveup').onclick = () => {
+  if (done) return;
+  done = true;
+  clearInterval(timer);
+  grid = solution.slice();
+  memo = Array(81).fill(0);
+  hintMarks = null;
+  render();
+  showMsg('정답입니다. "새 게임"을 눌러 다시 도전하세요.', 'info');
+};
+
+$('memo').onclick = () => { if (done) return; memoMode = !memoMode; render(); };
+$('erase').onclick = erase;
+$('new').onclick = newGame;
+
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key >= '1' && e.key <= '9') { input(+e.key); e.preventDefault(); return; }
+  if (e.key === 'Backspace' || e.key === 'Delete' || e.key === '0') { erase(); e.preventDefault(); return; }
+  if (e.key === 'n' || e.key === 'N') { $('memo').click(); return; }
+  const mv = { ArrowUp: -9, ArrowDown: 9, ArrowLeft: -1, ArrowRight: 1 }[e.key];
+  if (mv && !done) {
+    e.preventDefault();
+    if (selected < 0) selected = 0;
+    else {
+      const r = Math.floor(selected / 9), c = selected % 9;
+      const nr = (r + (mv === 9 ? 1 : mv === -9 ? -1 : 0) + 9) % 9, nc = (c + (mv === 1 ? 1 : mv === -1 ? -1 : 0) + 9) % 9;
+      selected = nr * 9 + nc;
+    }
+    render();
+  }
+});
+
+LEVELS.forEach((l) => {
+  const b = document.createElement('button');
+  b.textContent = l.name;
+  b.dataset.v = l.v;
+  b.onclick = () => { level = l.v; refreshSeg(); newGame(); };
+  $('levels').appendChild(b);
+});
+function refreshSeg() { for (const b of $('levels').children) b.classList.toggle('on', +b.dataset.v === level); }
+refreshSeg();
+sizeBoard();
+addEventListener('resize', sizeBoard); // 화면을 돌리거나 창 크기를 바꾸면 칸 크기를 다시 맞춘다
+build();
+newGame();
+</script>
+</body>
+</html>
