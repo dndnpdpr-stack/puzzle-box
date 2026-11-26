@@ -268,6 +268,38 @@
     }
   }
 
-  const api = { units, peers, candidates, countSolutions, solve, randomFull, isValidFull, findStep, grade };
+  // ---- 생성기 ----
+  // 완성 판에서 점대칭 쌍(i, 80-i)을 무작위 순서로 지운다. 정답이 하나로 유지될 때만 지우고,
+  // keep(g)가 false를 돌려주면 그 쌍은 되돌린다. stop(g)가 true면 멈춘다.
+  function dig(full, rng, keep, stop) {
+    const g = full.slice();
+    const pairs = shuffle([...Array(41).keys()], rng);
+    for (const i of pairs) {
+      if (stop && stop(g)) break;
+      const j = 80 - i, vi = g[i], vj = g[j];
+      g[i] = 0; g[j] = 0;
+      if (countSolutions(g) !== 1 || (keep && !keep(g))) { g[i] = vi; g[j] = vj; }
+    }
+    return g;
+  }
+  const clues = (g) => g.reduce((k, v) => k + (v ? 1 : 0), 0);
+
+  function generate(level, rng = Math.random) {
+    for (;;) {
+      const solution = randomFull(rng);
+      let puzzle;
+      if (level === 1) {
+        puzzle = dig(solution, rng, (g) => grade(g).level === 1, (g) => clues(g) <= 37);
+        const k = clues(puzzle);
+        if (k < 36 || k > 45) continue;
+      } else {
+        puzzle = dig(solution, rng);
+        if (grade(puzzle).level !== level) continue;
+      }
+      return { puzzle, solution, level };
+    }
+  }
+
+  const api = { units, peers, candidates, countSolutions, solve, randomFull, isValidFull, findStep, grade, generate };
   if (typeof module !== 'undefined') module.exports = api; else root.Sudoku = api;
 })(this);

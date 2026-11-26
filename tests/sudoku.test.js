@@ -149,3 +149,39 @@ test('grade steps are sound', () => {
   }
   assert.ok(graded >= 15, `기법으로 풀린 판 ${graded}/20`);
 });
+
+// ---- Task 3: 난이도별 생성기 ----
+test('generate levels', () => {
+  for (const level of [1, 2, 3])
+    for (let k = 0; k < 10; k++) {
+      const { puzzle, solution, level: lv } = S.generate(level);
+      assert.equal(lv, level);
+      assert.equal(S.countSolutions(puzzle), 1, `level ${level} 정답이 하나가 아님`);
+      assert.ok(S.isValidFull(solution));
+      assert.deepEqual(S.solve(puzzle), solution);
+      puzzle.forEach((v, i) => { if (v) assert.equal(v, solution[i]); });
+      assert.equal(S.grade(puzzle).level, level, `level ${level} 등급 불일치`);
+    }
+});
+
+test('easy clue count', () => {
+  for (let k = 0; k < 10; k++) {
+    const clues = S.generate(1).puzzle.filter((v) => v).length;
+    assert.ok(clues >= 36 && clues <= 45, `쉬움 주어진 숫자 ${clues}`);
+  }
+});
+
+test('timing', () => {
+  for (const level of [1, 2, 3]) {
+    const times = [];
+    for (let k = 0; k < 20; k++) {
+      const t = performance.now();
+      S.generate(level);
+      times.push(performance.now() - t);
+    }
+    const avg = times.reduce((a, b) => a + b) / times.length, max = Math.max(...times);
+    console.log(`  level ${level}: 평균 ${avg.toFixed(0)}ms 최악 ${max.toFixed(0)}ms`);
+    assert.ok(avg < 300, `level ${level} 평균 ${avg.toFixed(0)}ms`);
+    assert.ok(max < 1000, `level ${level} 최악 ${max.toFixed(0)}ms`);
+  }
+});
