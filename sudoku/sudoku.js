@@ -300,6 +300,16 @@
     }
   }
 
-  const api = { units, peers, candidates, countSolutions, solve, randomFull, isValidFull, findStep, grade, generate };
+  // ---- 힌트 ----
+  // 틀린 숫자가 있으면 그 칸, 없으면 지금 판(확정 숫자 − 힌트가 이미 적용한 제외 elim)에서 다음 한 수
+  function hint(grid, solution, elim) {
+    const wrong = grid.findIndex((v, i) => v && v !== solution[i]);
+    if (wrong >= 0) return { rule: 'wrong', focus: [wrong] };
+    if (grid.every((v) => v)) return { rule: 'done' };
+    const st = findStep(grid, candidates(grid, elim));
+    return st ? { rule: 'step', ...st } : { rule: 'stuck' };
+  }
+
+  const api = { units, peers, candidates, countSolutions, solve, randomFull, isValidFull, findStep, grade, generate, hint };
   if (typeof module !== 'undefined') module.exports = api; else root.Sudoku = api;
 })(this);

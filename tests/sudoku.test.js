@@ -185,3 +185,48 @@ test('timing', () => {
     assert.ok(max < 1000, `level ${level} 최악 ${max.toFixed(0)}ms`);
   }
 });
+
+// ---- Task 4: 힌트 ----
+test('hint-wrong-first', () => {
+  const { puzzle, solution } = S.generate(2);
+  const g = puzzle.slice();
+  const i = g.indexOf(0);
+  g[i] = (solution[i] % 9) + 1;
+  assert.deepEqual(S.hint(g, solution, Array(81).fill(0)), { rule: 'wrong', focus: [i] });
+  // 판을 정답으로 다 채우고 한 칸만 틀려도 같다
+  const full = solution.slice();
+  full[i] = (solution[i] % 9) + 1;
+  assert.deepEqual(S.hint(full, solution, Array(81).fill(0)), { rule: 'wrong', focus: [i] });
+});
+
+test('hint on solved board', () => {
+  const { solution } = S.generate(1);
+  assert.equal(S.hint(solution.slice(), solution, Array(81).fill(0)).rule, 'done');
+});
+
+test('hints-alone-solve', () => {
+  for (const level of [1, 2, 3])
+    for (let k = 0; k < 5; k++) {
+      const { puzzle, solution } = S.generate(level);
+      const g = puzzle.slice(), elim = Array(81).fill(0), seen = new Set();
+      let steps = 0;
+      for (;;) {
+        const h = S.hint(g, solution, elim);
+        if (h.rule === 'done') break;
+        assert.ok(++steps <= 381, `level ${level} 힌트가 끝나지 않음`);
+        assert.equal(h.rule, 'step', `틀린 칸이 없는데 ${h.rule}`);
+        if (h.place) {
+          assert.equal(h.place.digit, solution[h.place.cell], `${h.tech} place`);
+          g[h.place.cell] = h.place.digit;
+        }
+        for (const e of h.eliminate || []) {
+          assert.notEqual(e.digit, solution[e.cell], `${h.tech}가 정답 숫자를 지움`);
+          const key = e.cell * 10 + e.digit;
+          assert.ok(!seen.has(key), `${h.tech}가 같은 제외를 반복`);
+          seen.add(key);
+          elim[e.cell] |= 1 << e.digit;
+        }
+      }
+      assert.deepEqual(g, solution);
+    }
+});
