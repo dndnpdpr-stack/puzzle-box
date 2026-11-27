@@ -16,7 +16,7 @@
     font-variant-numeric: tabular-nums; -moz-appearance: textfield;
   }
   .cell::-webkit-inner-spin-button, .cell::-webkit-outer-spin-button { -webkit-appearance: none; }
-  .cell:focus { border-color: var(--accent); background: var(--sel); }
+  .cell.selected { border-color: var(--accent); background: var(--sel); }
   .cell.given { background: var(--given); color: var(--muted); }
   .cell.hinted { color: var(--accent); }
   .cell.dup { border-color: var(--bad); color: var(--bad); }
@@ -31,12 +31,12 @@
   .diag { font-size: 11px; }
   .pool { margin-top: 18px; }
   .pool h3 { font-size: 14px; margin: 0 0 8px; color: var(--muted); font-weight: 500; }
-  .nums { display: flex; flex-wrap: wrap; gap: 4px; }
+  .nums { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 4px; max-width: 480px; }
   .num {
-    font-size: 12px; min-width: 30px; padding: 4px 0; text-align: center;
-    border: 1px solid var(--line); border-radius: 6px; font-variant-numeric: tabular-nums;
+    min-height: 44px; padding: 4px 0; font-size: 16px; font-weight: 600;
+    font-variant-numeric: tabular-nums; touch-action: manipulation;
   }
-  .num.used { opacity: .25; text-decoration: line-through; }
+  .num.used { color: var(--muted); text-decoration: line-through; }
 </style>
 </head>
 <body>
@@ -69,12 +69,13 @@
   <div class="msg" id="msg"></div>
 
   <div class="pool">
-    <h3>남은 숫자</h3>
-    <div class="nums" id="pool"></div>
+    <h3 id="pool-label">숫자판</h3>
+    <div class="nums" id="pool" role="group" aria-labelledby="pool-label"></div>
   </div>
 
   <div class="help">
-    · 회색 칸은 처음부터 주어진 숫자입니다. 방향키로 칸을 이동할 수 있습니다.<br>
+    · 칸을 고르고 숫자판을 누르세요. 같은 숫자를 다시 누르면 지워집니다.<br>
+    · 회색 칸은 처음부터 주어진 숫자입니다. 키보드로 입력하거나 방향키로 칸을 이동할 수 있습니다.<br>
     · 오른쪽·아래 숫자는 각 줄의 현재 합입니다. 초록색이면 정답 합, 빨간색이면 초과입니다.<br>
     · 정답 예시와 달라도 조건만 맞으면 성공입니다.<br>
     · "1만 주기": 공식대로 만들 때 1이 놓이는 자리에 1만 놓고 시작합니다.<br>
@@ -96,6 +97,7 @@ const LEVELS = [
 const ONLY1 = LEVELS.findIndex((l) => l.only1);
 let state = { n: 5, level: 1 };
 let solution, grid, given, inputs, timer, start, hintCount, done;
+let selected = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -161,15 +163,18 @@ function build() {
   board.style.setProperty('--cs', cs + 'px');
   board.innerHTML = '';
   inputs = [];
+  selected = null;
   for (let i = 0; i < n; i++) {
     const tr = board.insertRow();
     inputs.push([]);
     for (let j = 0; j < n; j++) {
       const inp = document.createElement('input');
       inp.className = 'cell';
-      inp.inputMode = 'numeric';
+      inp.inputMode = 'none';
       inp.autocomplete = 'off';
       if (given[i][j]) { inp.value = grid[i][j]; inp.readOnly = true; inp.classList.add('given'); }
+      inp.addEventListener('focus', () => selectCell(i, j));
+      inp.addEventListener('click', () => selectCell(i, j));
       inp.addEventListener('input', () => onInput(i, j));
       inp.addEventListener('keydown', (e) => onKey(e, i, j));
       tr.insertCell().appendChild(inp);
@@ -183,8 +188,36 @@ function build() {
   const top = board.insertRow(0);
   for (let j = 0; j < n; j++) top.insertCell();
   const d2 = top.insertCell(); d2.className = 'sum diag'; d2.id = 'd2'; d2.title = '대각선 ↙';
-  const firstEmpty = inputs.flat().find((x) => !x.readOnly);
-  if (firstEmpty) firstEmpty.focus();
+
+  const pool = $('pool');
+  pool.innerHTML = '';
+  for (let number = 1; number <= n * n; number++) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'num';
+    button.textContent = number;
+    button.addEventListener('click', () => {
+      if (done || !selected) return;
+      const { i, j } = selected;
+      if (given[i][j]) return;
+      inputs[i][j].value = grid[i][j] === number ? '' : String(number);
+      onInput(i, j);
+    });
+    pool.appendChild(button);
+  }
+
+  const firstEmpty = given.flat().indexOf(false);
+  if (firstEmpty >= 0) {
+    const i = Math.floor(firstEmpty / n), j = firstEmpty % n;
+    selectCell(i, j);
+    inputs[i][j].focus();
+  }
+}
+
+function selectCell(i, j) {
+  if (selected) inputs[selected.i][selected.j].classList.remove('selected');
+  selected = { i, j };
+  inputs[i][j].classList.add('selected');
 }
 
 function onInput(i, j) {
@@ -242,16 +275,11 @@ function update() {
   setSum('d1', d1, d1f); setSum('d2', d2, d2f);
   $('filled').textContent = `${filled} / ${n * n}`;
 
-  const pool = $('pool');
-  pool.innerHTML = '';
-  for (let k = 1; k <= n * n; k++) {
-    const s = document.createElement('span');
-    s.className = 'num' + (counts[k] ? ' used' : '');
-    s.textContent = k;
-    pool.appendChild(s);
+  if (!done && filled === n * n && Magic.isMagic(grid)) win();
+  for (const [index, button] of Array.from($('pool').children).entries()) {
+    button.classList.toggle('used', Boolean(counts[index + 1]));
+    button.disabled = done;
   }
-
-  if (filled === n * n && Magic.isMagic(grid)) win();
 }
 
 function win() {
